@@ -40,7 +40,7 @@ def dist2(v1, v2):
     
     If close: spam spikes
     
-    Turle: If under 20% and have >30 food then wall up and heal
+    Turtle: If under 20% and have >30 food then wall up and heal
     Run away: less than 40 of 1 resources
     place walls between enemy and yourself, while shooting them with bow
     specifically run along edge of map and not towards edge of map
@@ -60,12 +60,12 @@ def dist2(v1, v2):
 class MatthewAgent(BaseAgent):
     class States(Enum): # basic agent states
         IDLE = 0
-        EXPLORING = 1
-        GATHERING = 2
-        REGROUPING = 3
-        ATTACKING = 4
-        RETREATING = 5
-        SEIGING = 6
+        PANIC = 1
+        TURTLE = 2
+        RETREAT = 3
+        COMBAT = 4
+        GATHER = 5
+        EXPLORE = 6
 
     class AgentState():
         DEFAULT_ACTION = [1, 1, 0, 0, 2]
@@ -85,13 +85,6 @@ class MatthewAgent(BaseAgent):
             self.patience = -1
 
     def __init__(self):
-        pass
-
-    def initialize(self, agent_ids, team):
-        self.agent_ids = agent_ids
-        self.team = team
-        self.agent_states = {id_: self.AgentState(self, id_) for id_ in self.agent_ids}
-
         self.solid_objects = ("spike", "stonewall", "woodwall", "turret", "stone", "tree", "bush")
         self.structures = ("spike", "stonewall", "woodwall", "turret")
 
@@ -102,10 +95,24 @@ class MatthewAgent(BaseAgent):
             for s in self.States
         }
 
+    def initialize(self, team):
+        self.team = 1 if team=="defender" else 2
+        self.agent_states = {}
+        self.agent_ids = []
+
+    def addAgent(self, id_):
+        self.agent_states[id_] = self.AgentState(self, id_)
+        self.agent_ids.append(id_)
+        return f"BasicAgent{id_}"
+
+    def removeAgent(self, id_):
+        self.agent_states.remove(id_)
+        self.agent_ids.remove(id_)
+
     def teamStr(self, team):
         return "defender" if team == 1 else "raider"
 
-    def step(self, observations, team_observations):
+    def getAction(self, observation, id_):
         # each agent outputs an action when step is called
         '''
         Observation is defined as nested AttrDicts
@@ -154,94 +161,89 @@ class MatthewAgent(BaseAgent):
                     4: rotate 22.5° counterclockwise
         '''
 
-        for agent_id in self.agent_ids:
-            self.agent_states[agent_id].action = self.agent_states[agent_id].DEFAULT_ACTION[:]
-        self.observations = {id_: obs for id_, obs in zip(self.agent_ids, observations)}
+        self.obs = observation
+        self.state = self.agent_states[id_]
 
-        self.handleTeamObservations(team_observations)
+        if (self.highOnResources() or self.obs.metadata.time > 180*20) and not self.state.base_is_objective:
+            self.state.base_is_objective = True
+            self.state.changeState(self.States.IDLE)
 
-        for agent_id in self.agent_ids:
-            self.obs = self.observations[agent_id]
-            self.state = self.agent_states[agent_id]
+        state = self.state.state
 
-            if (self.highOnResources() or self.obs.metadata.time > 180*20) and not self.state.base_is_objective:
-                self.state.base_is_objective = True
-                self.state.changeState(self.States.IDLE)
-                continue
+        if self.state.base_is_objective and (self.teamStr(self.team) != "raider" or not self.lowOnResources(50)):
+            if state is self.States.GATHERING and (self.state.target_pos is not None and dist2(self.state.target_pos, self.obs.metadata.center) > 210**2):
+                self.state.state = self.States.IDLE
+                state = self.state.state
 
-            state = self.state.state
+        match state: # basic agent operates on a Finite State Automaton
+            case self.States.IDLE:
+                self.handleIdle()
+            case self.States.EXPLORING:
+                self.handleExploring()
+            case self.States.GATHERING:
+                self.handleGathering()
+            case self.States.REGROUPING:
+                self.handleRegrouping()
+            case self.States.ATTACKING:
+                self.handleAttacking()
+            case self.States.RETREATING:
+                self.handleRetreating()
+            case self.States.SEIGING:
+                self.handleSeiging()
+        
+        # no hitting friendly turrets
+        if self.state.action[2] in (1,3):
+            for obj in self.obs.turret:
+                if obj.team != self.team: continue
+                dist = math.dist(obj.position, self.obs.self.position)
+                if dist < 90:
+                    dx, dy = obj.position[0] - self.obs.self.position[0], obj.position[1] - self.obs.self.position[1]
+                    d_angle = (self.obs.self.angle - math.atan2(dy, dx)) % math.pi
 
-            if self.state.base_is_objective and (self.teamStr(self.team) != "raider" or not self.lowOnResources(50)):
-                if state is self.States.GATHERING and (self.state.target_pos is not None and dist2(self.state.target_pos, self.obs.metadata.center) > 210**2):
-                    self.state.state = self.States.IDLE
-                    state = self.state.state
+                    if dist < 50 or min(abs(d_angle-math.pi), d_angle) < math.pi * 0.8 / (math.dist(obj.position, self.obs.self.position) / 30):
+                        if self.state.state in (self.States.ATTACKING, self.States.SEIGING, self.States.RETREATING):
+                            self.state.action[2] = 2
+                        else:
+                            self.state.action[3] = 0
+                            self.moveTowardsPos(obj.position, away=True)
 
-            match state: # basic agent operates on a Finite State Automaton
-                case self.States.IDLE:
-                    self.handleIdle()
-                case self.States.EXPLORING:
-                    self.handleExploring()
-                case self.States.GATHERING:
-                    self.handleGathering()
-                case self.States.REGROUPING:
-                    self.handleRegrouping()
-                case self.States.ATTACKING:
-                    self.handleAttacking()
-                case self.States.RETREATING:
-                    self.handleRetreating()
-                case self.States.SEIGING:
-                    self.handleSeiging()
-            
-            # no hitting friendly turrets
-            if self.state.action[2] in (1,3):
-                for obj in self.obs.turret:
-                    if obj.team != self.team: continue
-                    dist = math.dist(obj.position, self.obs.self.position)
-                    if dist < 90:
-                        dx, dy = obj.position[0] - self.obs.self.position[0], obj.position[1] - self.obs.self.position[1]
-                        d_angle = (self.obs.self.angle - math.atan2(dy, dx)) % math.pi
+        # autoheal
+        if self.obs.self.health <= 15 and self.obs.self.food >= 15 and random.random() < 0.05:
+            self.state.action[2] = 9
+            self.state.action[3] = 1
+        # autoapproach heals
+        nearby_heals = self.obs.heal
+        closest_heal, dist = self.getClosestObject(nearby_heals)
+        if self.state.state != self.States.RETREATING and closest_heal is not None and dist < 50 and self.obs.self.health < 18:
+            self.moveTowardsPos(closest_heal.position, move_threshold=10)
+        # autoavoid frags
+        nearby_frags = self.obs.frag
+        frag_avg_position = self.averagePositionOfObjects(nearby_frags)
+        if frag_avg_position != (0,0):
+            self.moveTowardsPos(frag_avg_position, away=True)
 
-                        if dist < 50 or min(abs(d_angle-math.pi), d_angle) < math.pi * 0.8 / (math.dist(obj.position, self.obs.self.position) / 30):
-                            if self.state.state in (self.States.ATTACKING, self.States.SEIGING, self.States.RETREATING):
-                                self.state.action[2] = 2
-                            else:
-                                self.state.action[3] = 0
-                                self.moveTowardsPos(obj.position, away=True)
-
-            # autoheal
-            if self.obs.self.health <= 15 and self.obs.self.food >= 15 and random.random() < 0.05:
-                self.state.action[2] = 9
-                self.state.action[3] = 1
-            # autoapproach heals
-            nearby_heals = self.obs.heal
-            closest_heal, dist = self.getClosestObject(nearby_heals)
-            if self.state.state != self.States.RETREATING and closest_heal is not None and dist < 50 and self.obs.self.health < 18:
-                self.moveTowardsPos(closest_heal.position, move_threshold=10)
-            # autoavoid frags
-            nearby_frags = self.obs.frag
-            frag_avg_position = self.averagePositionOfObjects(nearby_frags)
-            if frag_avg_position != (0,0):
-                self.moveTowardsPos(frag_avg_position, away=True)
-
-        return [self.agent_states[id_].action for id_ in self.agent_ids]
+        return self.agent_states[id_].action
     
 
-    def handleTeamObservations(self, team_observations):
+    def handleTeamObservation(self, team_observation):
         '''
         handle any macro team-wide decision making
         '''
-        if team_observations[0].metadata.time == 1:
+        self.observations = team_observation
+
+        self.sample_id = tuple(team_observation.keys())[0]
+        if team_observation[self.sample_id].metadata.time == 1:
             for agent_id in self.agent_ids:
                 self.agent_states[agent_id].base_is_objective = False
 
-        if team_observations[0].metadata.time > 180*20: # 3 minutes
+        if team_observation[self.sample_id].metadata.time > 180*20: # 3 minutes
             for agent_id in self.agent_ids:
                 self.agent_states[agent_id].base_is_objective = True
         
-        if self.teamStr(self.team) == "raider":
-            self.handleTeamObservationsRaider(team_observations)
+        if self.__team__ == "raider":
+            self.handleTeamObservationsRaider(team_observation)
         else:
-            self.handleTeamObservationsDefender(team_observations)
+            self.handleTeamObservationsDefender(team_observation)
     
 
     def handleTeamObservationsRaider(self, team_observations):
@@ -252,7 +254,7 @@ class MatthewAgent(BaseAgent):
         # handle defender decision making
         enemies_near_base = 0
         teammates_defending_base = []
-        for id_ in self.agent_ids:
+        for id_, state in self.agent_states.items():
             self.obs = self.observations[id_]
             self.state = self.agent_states[id_]
 
@@ -260,12 +262,12 @@ class MatthewAgent(BaseAgent):
                 teammates_defending_base.append(id_)
 
         seen_enemies = set()
-        for obs in team_observations:
+        for id_, obs in team_observations.items():
             enemies = [player for player in obs.player if player.team != self.team]
             for enemy in enemies:
                 if enemy.id_ in seen_enemies: continue
                 seen_enemies.add(enemy.id_)
-                if dist2(enemy.position, team_observations[0].metadata.center) < 400:
+                if dist2(enemy.position, team_observations[self.sample_id].metadata.center) < 400:
                     enemies_near_base += 1
 
         necessary_defenders = min(enemies_near_base + 2, len(self.agent_ids))
@@ -824,7 +826,7 @@ class MatthewAgent(BaseAgent):
         A = -dy
         B = dx
         C = 0
-        denom = math.sqrt(A*A + B*B)
+        denom = max(0.01, math.sqrt(A*A + B*B))
 
         objects_in_way = []
         for obj in sum([self.obs[type_] for type_ in self.solid_objects], []):
@@ -985,14 +987,16 @@ class MatthewAgent(BaseAgent):
         if self.obs.self.stone < resource_threshold: return False
         return True
     
-    def debug(self, surface):
-        for agent_id in self.agent_ids:
-            obs = self.observations[agent_id]
-            state = self.agent_states[agent_id]
+    def debug(self, surface, id_):
+        agent_id = id_
+        obs = self.observations[agent_id]
+        state = self.agent_states[agent_id]
 
-            text_surf = self.state_texts[state.state]
-            text_rect = text_surf.get_rect(center=(obs.self.position[0], obs.self.position[1]+30))
-            surface.blit(text_surf, text_rect)
+        text_surf = self.state_texts[state.state]
+        # display name for demo purposes
+        #text_surf = pygame.transform.flip(self.font.render("NewAgent", True, (255,255,255)), False, True)
+        text_rect = text_surf.get_rect(center=(obs.self.position[0], obs.self.position[1]+30))
+        surface.blit(text_surf, text_rect)
     
     def getNames(self):
         return [f"BasicAI {i}" for i in self.agent_ids]
