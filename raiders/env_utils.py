@@ -246,8 +246,8 @@ AgentScripts = discoverAgents()
 if __name__ == "__main__":
     agent_scripts = [
         (AgentScripts.PlayerAgent(), 1, "defender"),
-        (AgentScripts.NewAgent(), 3, "defender"),
-        (AgentScripts.BasicAgent(), 8, "raider")
+        (AgentScripts.MatthewAgent(), 3, "defender"),
+        (AgentScripts.MatthewAgent(), 8, "raider")
     ]
 
     env = RaiderEnvironmentWrapper()
