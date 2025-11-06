@@ -167,21 +167,46 @@ class MatthewAgent(BaseAgent):
         state = self.state.state
 
         
-
+        resource_list = ("bush", "tree", "stone")
+        nearby_resources = []
+        for rl in resource_list:
+            for resource in self.obs[rl]:
+                nearby_resources.append(resource)
         teammates, enemies = self.nearbyPlayers()
         closest_enemy, enemy_distance = self.getClosestObject(enemies)
-        if((enemy_distance < 45)): #  and (self.enoughResourcesFor("spike"))
+        closest_resource, resource_distance = self.getClosestObject(nearby_resources)
+        
+        
+        
+        if((enemy_distance < 45) and (self.enoughResourcesFor("spike"))): #  and  # Spike panic if nearby enemies
             state = self.States.PANIC
             self.state.action[2] = 7
             self.pointToTarget(closest_enemy.position)
             self.moveTowardsPos(closest_enemy.position)
             self.spamClick()
-        elif((enemy_distance<80)):
+        elif((enemy_distance<80) and ((not self.lowOnResources()) or (closest_enemy.health<5))): # Attack and follow enemy if gets into range
+            # If low on resources, it should only follow if enemy is low on health
             self.state.action[2] = 1
             self.pointToTarget(closest_enemy.position)
             self.moveTowardsPos(closest_enemy.position)
             self.spamClick()
-
+        elif((enemy_distance < 80) and (self.lowOnResources())): # Run away
+            if(self.enoughResourcesFor("bow")):
+                self.state.action[2] = 2 # ADD A METHOD TO CHECK IF A BLOCK IS PLACEABLE OR INCREMENTAL ROTATIONS
+                self.pointToTarget(closest_enemy.position)
+            if(self.canPlaceWall()):
+                self.state.action[2] = self.canPlaceWall()
+                self.pointToTarget(closest_enemy.position)
+            else:
+                self.state.action[2] = 3
+                self.pointToTarget(closest_resource.position)
+            self.moveTowardsPos(closest_resource.position, away = True)
+        else: # Default to gather
+            self.state.action[2] = 3
+            self.pointToTarget(closest_resource.position)
+            self.moveTowardsPos(closest_resource.position)
+            self.spamClick()
+            
         
 
 
@@ -204,6 +229,13 @@ class MatthewAgent(BaseAgent):
 
         return self.agent_states[id_].action
     
+    def canPlaceWall(self):
+        if(self.enoughResourcesFor("stonewall")):
+            return 6
+        if(self.enoughResourcesFor("woodwall")):
+            return 5
+        return 0
+    
     def enoughResourcesFor(self, action):
         food, wood, stone = self.obs.self.food, self.obs.self.wood, self.obs.self.stone
         if(action == "bow"):
@@ -220,6 +252,12 @@ class MatthewAgent(BaseAgent):
             return (wood > 45) and (stone > 30)
         if(action == "heal"):
             return food > 15
+
+    def lowOnResources(self):
+        if self.obs.self.food < 40: return True
+        if self.obs.self.wood < 40: return True
+        if self.obs.self.stone < 40: return True
+        return False
 
     def handleTeamObservation(self, team_observation):
         '''
