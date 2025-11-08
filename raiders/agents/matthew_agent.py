@@ -103,7 +103,7 @@ class MatthewAgent(BaseAgent):
     def addAgent(self, id_):
         self.agent_states[id_] = self.AgentState(self, id_)
         self.agent_ids.append(id_)
-        return f"BasicAgent{id_}"
+        return f"MatthewAgent{id_}"
 
     def removeAgent(self, id_):
         self.agent_states.remove(id_)
@@ -167,22 +167,75 @@ class MatthewAgent(BaseAgent):
         state = self.state.state
 
         
-
+        resource_list = ("bush", "tree", "stone")
+        nearby_resources = []
+        for rl in resource_list:
+            for resource in self.obs[rl]:
+                nearby_resources.append(resource)
         teammates, enemies = self.nearbyPlayers()
         closest_enemy, enemy_distance = self.getClosestObject(enemies)
-        if((enemy_distance < 45)): #  and (self.enoughResourcesFor("spike"))
+        nearby_turrets = self.nearbyStructuresofType("turret","enemy")
+        nearby_threats = nearby_turrets + enemies
+        viable_threats = [threat for threat in nearby_threats if not self.objectsInWay(threat.position, pov = "enemy")] # Check to see if there's a clear line between threat and ally
+        attackable_threats = [threat for threat in nearby_threats if not self.objectsInWay(threat.position, pov = "ally")]
+        
+        
+        closest_target, target_distance = self.getClosestObject(attackable_threats)
+        closest_threat, threat_distance = self.getClosestObject(viable_threats)
+        closest_turret, turret_distance = self.nearestStructureofType("turret","enemy")
+        
+        closest_resource, resource_distance = self.getClosestObject(nearby_resources)
+        resource_position = (1000,1000)
+        if(closest_resource):
+            resource_position = closest_resource.position
+        
+        
+        if((enemy_distance < 45) and (self.enoughResourcesFor("spike"))): #  and  # Spike panic if nearby enemies
             state = self.States.PANIC
             self.state.action[2] = 7
             self.pointToTarget(closest_enemy.position)
             self.moveTowardsPos(closest_enemy.position)
             self.spamClick()
-        elif((enemy_distance<80)):
+        elif((enemy_distance<80) and ((not self.lowOnResources()) or (closest_enemy.health<5))): # Attack and follow enemy if gets into range
+            # If low on resources, it should only follow if enemy is low on health
             self.state.action[2] = 1
             self.pointToTarget(closest_enemy.position)
             self.moveTowardsPos(closest_enemy.position)
             self.spamClick()
-
-        
+        elif(threat_distance < 300 and self.canPlaceWall()):
+            self.state.action[2] = self.canPlaceWall()
+            self.pointToTarget(closest_threat.position)
+            self.moveTowardsPos(resource_position)
+            self.spamClick()
+        elif(((self.obs.self.health<10) or (self.lowOnResources())) and threat_distance < 120): # Run away
+            if(self.enoughResourcesFor("bow")):
+                self.state.action[2] = 2 # ADD A METHOD TO CHECK IF A BLOCK IS PLACEABLE OR INCREMENTAL ROTATIONS
+                self.pointToTarget(closest_threat.position)
+            elif(self.canPlaceWall()):
+                self.state.action[2] = self.canPlaceWall()
+                self.pointToTarget(closest_threat.position)
+            else:
+                self.state.action[2] = 3
+                self.pointToTarget(resource_position)
+            self.moveTowardsPos(closest_threat.position, away = True)
+            self.spamClick()
+        elif(target_distance < 120):
+            if(self.enoughResourcesFor("bow") and closest_target.type == "player"):
+                self.state.action[2] = 2 # ADD A METHOD TO CHECK IF A BLOCK IS PLACEABLE OR INCREMENTAL ROTATIONS
+                self.pointToTarget(closest_target.position)
+            elif(self.enoughResourcesFor("frag") and closest_target.type == "turret"):
+                self.state.action[2] = 4
+                self.pointToTarget(closest_target.position)
+            self.moveTowardsPos(resource_position)
+            self.spamClick()
+        else: # Default to gather
+            self.state.action[2] = 3
+            self.pointToTarget(resource_position)
+            self.moveTowardsPos(resource_position)
+            self.spamClick()
+            
+        #if(self.insideStorm()):
+        #    self.moveTowardsPos(self.obs.metadata.center)
 
 
         match state: # basic agent operates on a Finite State Automaton
@@ -204,6 +257,16 @@ class MatthewAgent(BaseAgent):
 
         return self.agent_states[id_].action
     
+    def insideStorm(self):
+        return self.obs.metadata.storm_size<dist2(self.obs.metadata.center,self.obs.self.position)
+    
+    def canPlaceWall(self):
+        if(self.enoughResourcesFor("stonewall")):
+            return 6
+        if(self.enoughResourcesFor("woodwall")):
+            return 5
+        return 0
+    
     def enoughResourcesFor(self, action):
         food, wood, stone = self.obs.self.food, self.obs.self.wood, self.obs.self.stone
         if(action == "bow"):
@@ -220,6 +283,12 @@ class MatthewAgent(BaseAgent):
             return (wood > 45) and (stone > 30)
         if(action == "heal"):
             return food > 15
+
+    def lowOnResources(self):
+        if self.obs.self.food < 40: return True
+        if self.obs.self.wood < 40: return True
+        if self.obs.self.stone < 40: return True
+        return False
 
     def handleTeamObservation(self, team_observation):
         '''
@@ -285,7 +354,7 @@ class MatthewAgent(BaseAgent):
         '''
         pass
 
-    def objectsInWay(self, target_pos, size=None):
+    def objectsInWay(self, target_pos, size=None, pov=""):
         if size is None:
             size = self.obs.self.size
 
@@ -295,11 +364,13 @@ class MatthewAgent(BaseAgent):
         A = -dy
         B = dx
         C = 0
-        denom = max(0.00001, math.sqrt(A*A + B*B))
+        denom = max(0.0000001, math.sqrt(A*A + B*B))
 
         objects_in_way = []
         for obj in sum([self.obs[type_] for type_ in self.solid_objects], []):
-            if obj.type in ("spike", "stonewall", "turret") and obj.team == self.team:
+            if obj.type in ("spike", "stonewall", "turret") and obj.team == self.team and pov == "ally":
+                continue
+            if obj.type in ("spike", "stonewall", "turret") and obj.team != self.team and pov == "enemy":
                 continue
             x, y = obj.relative_position
             d = abs(A*x + B*y + C) / denom
@@ -307,6 +378,22 @@ class MatthewAgent(BaseAgent):
                 objects_in_way.append(obj)
 
         return objects_in_way
+    
+    def nearestStructureofType(self, structure_name, team = ""):
+        structures = self.nearbyStructuresofType(structure_name,team)
+        return self.getClosestObject(structures)
+        
+    def nearbyStructuresofType(self, structure_name, team = ""):
+        structures = []
+        for obj in self.obs[structure_name]:
+            if((team == "ally") and (obj.team == self.team)):
+                structures.append(obj)
+            elif((team == "opponent") and (obj.team != self.team)):
+                structures.append(obj)
+            else:
+                structures.append(obj)
+        return structures
+
     
     def nearbyEnemyStructures(self):
         enemy_structures = []
