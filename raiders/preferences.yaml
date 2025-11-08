@@ -7,12 +7,12 @@ controls:
   left: a
   place_attack: mouse_left
   right: d
+  spectate_1: right_arrow
+  spectate_2: left_arrow
   spike: q
   stone_wall: '6'
   sword: '1'
   turret: r
   up: w
   wood_wall: '5'
-  spectate_1: right_arrow
-  spectate_2: left_arrow
-name: :)
+name: "\x7F\x7F\x7F\x7F\x7F\x7F\x7F"
