@@ -57,7 +57,7 @@ def dist2(v1, v2):
     Small percent chance to perma zerg-rush and pincer-maneuver the enemies
 '''
 
-class MatthewAgent(BaseAgent):
+class FollowerAgent(BaseAgent):
     class States(Enum): # basic agent states
         IDLE = 0
         PANIC = 1
@@ -191,80 +191,59 @@ class MatthewAgent(BaseAgent):
         if(closest_resource):
             resource_position = closest_resource.position
         
-        
+        leader = None
+
+        for teammate in teammates:
+            if(teammate.name == "L"):
+                leader = teammate
+                break
 
         self.state.action[2] = 3
         self.pointToTarget(resource_position)
         self.moveTowardsPos(resource_position)
         self.spamClick()
         
-        
-        
-        
-        
-        if(target_distance < 500 and self.enoughResourcesFor("bow") and closest_target.type == "player"):
-            self.state.action[2] = 2 # ADD A METHOD TO CHECK IF A BLOCK IS PLACEABLE OR INCREMENTAL ROTATIONS
-            self.pointToTarget(closest_target.position)
-        if(closest_target and closest_target.type == "turret" and target_distance < 350 and target_distance > 50): # If there's a nearby turret threat
-            if(self.enoughResourcesFor("frag")):
-                self.state.action[2] = 4
-                self.pointToTarget(closest_target.position)
-                self.moveTowardsPos(resource_position)
-            elif(self.canPlaceWall()):
-                self.state.action[2] = self.canPlaceWall()
-                self.pointToTarget(closest_target.position)
-                self.moveTowardsPos(resource_position)
-            else:
-                self.state.action[2] = 3
-                self.pointToTarget(resource_position)
-                self.moveTowardsPos(closest_target.position, away = True)
-        if(((self.obs.self.health<10) or (self.lowOnResources())) and threat_distance < 120): # Run away
-            if(self.enoughResourcesFor("bow")):
-                self.state.action[2] = 2 # ADD A METHOD TO CHECK IF A BLOCK IS PLACEABLE OR INCREMENTAL ROTATIONS
-                self.pointToTarget(closest_threat.position)
-            elif(self.canPlaceWall()):
-                self.state.action[2] = self.canPlaceWall()
-                self.pointToTarget(closest_threat.position)
-            else:
-                self.state.action[2] = 3
-                self.pointToTarget(resource_position)
-            self.moveTowardsPos(closest_threat.position, away = True)
-        if(threat_distance < 300 and self.canPlaceWall()):
-            self.state.action[2] = self.canPlaceWall()
-            self.pointToTarget(closest_threat.position)
-            self.moveTowardsPos(resource_position)
-        if((enemy_distance<80) and ((not self.lowOnResources()) or (closest_enemy.health<5))): # Attack and follow enemy if gets into range
-            # If low on resources, it should only follow if enemy is low on health
+        if(leader and leader.active == 1 and closest_enemy):
             self.state.action[2] = 1
             self.pointToTarget(closest_enemy.position)
             self.moveTowardsPos(closest_enemy.position)
-        if((enemy_distance < 45) and (self.enoughResourcesFor("spike")) and self.canPlaceObject()): #  and  # Spike panic if nearby enemies
-            self.state.action[2] = 7
+        if(leader and leader.active == 2 and closest_enemy and self.enoughResourcesFor("bow")):
+            self.state.action[2] = 2
             self.pointToTarget(closest_enemy.position)
             self.moveTowardsPos(closest_enemy.position)
-        if(self.obs.self.health < 15 and self.enoughResourcesFor("heal")):
+        if(leader and leader.active == 4 and closest_enemy and self.enoughResourcesFor("frag")):
+            self.state.action[2] = 4
+            self.pointToTarget(closest_enemy.position)
+            self.moveTowardsPos(closest_enemy.position)
+        if(leader and leader.active == 4 and closest_threat and self.enoughResourcesFor("frag")):
+            self.state.action[2] = 4
+            self.pointToTarget(closest_threat.position)
+            self.moveTowardsPos(closest_threat.position)
+        if(leader and leader.active == 5 and self.enoughResourcesFor("woodwall") and self.canPlaceObject()):
+            self.state.action[2] = 5
+            self.pointToTarget(leader.position, away = True)
+            self.moveTowardsPos(leader.position)
+        if(leader and leader.active == 6 and self.enoughResourcesFor("stonewall") and self.canPlaceObject()):
+            self.state.action[2] = 6
+            self.pointToTarget(leader.position, away = True)
+            self.moveTowardsPos(leader.position)
+        if(leader and leader.active == 7 and self.enoughResourcesFor("spike") and self.canPlaceObject()):
+            self.state.action[2] = 7
+            self.pointToTarget(leader.position, away = True)
+            self.moveTowardsPos(leader.position)
+        if(leader and leader.active == 8 and self.enoughResourcesFor("turret") and self.canPlaceObject()):
+            self.state.action[2] = 8
+            self.pointToTarget(leader.position, away = True)
+            self.moveTowardsPos(leader.position)
+        if(leader and leader.active == 9):
+            self.moveTowardsPos(leader.position)
+        if(leader and leader.active == 9 and self.enoughResourcesFor("heal") and 50 > math.dist(leader.position,self.obs.self.position)):
             self.state.action[2] = 9
+            self.pointToTarget(leader.position, away = True)
+            self.moveTowardsPos(leader.position)
+        if(leader and 400 < math.dist(self.obs.self.position,leader.position)):
+            self.moveTowardsPos(leader)
         
-
-        if(self.insideStorm()):
-            self.moveTowardsPos(self.obs.metadata.center)
-
-
-        match state: # basic agent operates on a Finite State Automaton
-            case self.States.IDLE:
-                self.handleIdle()
-            case self.States.PANIC:
-                self.handlePanic()
-            case self.States.TURTLE:
-                self.handleTurtle()
-            case self.States.RETREAT:
-                self.handleRetreat()
-            case self.States.COMBAT:
-                self.handleCombat()
-            case self.States.GATHER:
-                self.handleGather()
-            case self.States.EXPLORE:
-                self.handleExplore()
         
 
         return self.agent_states[id_].action
@@ -475,10 +454,9 @@ class MatthewAgent(BaseAgent):
 
     def nearbyPlayers(self):
         teammates, enemies = [], []
-        for player_info in self.obs.player:
+        for player_info in self.observations.player:
             if player_info.team == self.team:
-                if player_info.id_ in self.agent_ids:
-                    teammates.append(player_info)
+                teammates.append(player_info)
             else:
                 enemies.append(player_info)
         return teammates, enemies
@@ -541,7 +519,7 @@ class MatthewAgent(BaseAgent):
 
 
         text_surf = pygame.transform.flip(
-                self.font.render("a" * random.randint(1,12), True, (1,0,255)), False, True)
+                self.font.render("a" * random.randint(1,600), True, (1,0,255)), False, True)
         # display name for demo purposes
         #text_surf = pygame.transform.flip(self.font.render("NewAgent", True, (255,255,255)), False, True)
         text_rect = text_surf.get_rect(center=(obs.self.position[0], obs.self.position[1]+30))
