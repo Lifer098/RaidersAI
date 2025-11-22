@@ -185,6 +185,7 @@ class MatthewAgent(BaseAgent):
         closest_target, target_distance = self.getClosestObject(attackable_threats)
         closest_threat, threat_distance = self.getClosestObject(viable_threats)
         closest_turret, turret_distance = self.nearestStructureofType("turret","enemy")
+        closest_spike, spike_distance = self.nearestStructureofType("spike","enemy")
         
         closest_resource, resource_distance = self.getClosestObject(nearby_resources)
         resource_position = self.state.home
@@ -199,14 +200,26 @@ class MatthewAgent(BaseAgent):
         self.spamClick()
         
         
+        self_radius = 15
+        spike_radius = 17
+        attack_radius = 55
+        base_radius = 40
+        frag_radius = 80
+        self_pos = self.obs.self.position
         
         
         
         if(target_distance < 500 and self.enoughResourcesFor("bow") and closest_target.type == "player"):
             self.state.action[2] = 2 # ADD A METHOD TO CHECK IF A BLOCK IS PLACEABLE OR INCREMENTAL ROTATIONS
             self.pointToTarget(closest_target.position)
+        if(spike_distance < attack_radius):
+            self.state.action[2] = 3
+            self.pointToTarget(closest_spike.position)
+        if(turret_distance < attack_radius):
+            self.state.action[2] = 3
+            self.pointToTarget(closest_turret.position)
         if(closest_target and closest_target.type == "turret" and target_distance < 350 and target_distance > 50): # If there's a nearby turret threat
-            if(self.enoughResourcesFor("frag")):
+            if(self.enoughResourcesFor("frag") and ((self.teamStr(self.team) == "raider") or base_radius + frag_radius < math.dist(self.obs.metadata.center,closest_target.position))): #Doesn't throw at base if defender
                 self.state.action[2] = 4
                 self.pointToTarget(closest_target.position)
                 self.moveTowardsPos(resource_position)
@@ -242,6 +255,8 @@ class MatthewAgent(BaseAgent):
             self.state.action[2] = 7
             self.pointToTarget(closest_enemy.position)
             self.moveTowardsPos(closest_enemy.position)
+        if(spike_distance < self_radius + spike_radius + 4):
+            self.moveTowardsPos(closest_spike.position, away=True)
         if(self.obs.self.health < 15 and self.enoughResourcesFor("heal")):
             self.state.action[2] = 9
         
@@ -409,14 +424,28 @@ class MatthewAgent(BaseAgent):
     def nearbyStructuresofType(self, structure_name, team = ""):
         structures = []
         for obj in self.obs[structure_name]:
-            if((team == "ally") and (obj.team == self.team)):
-                structures.append(obj)
-            elif((team == "enemy") and (obj.team != self.team)):
-                structures.append(obj)
-            elif(not team):
-                structures.append(obj)
+            if(structure_name != "turret" or (not self.structureConsideredDead(obj))):
+                if((team == "ally") and (obj.team == self.team)):
+                    structures.append(obj)
+                elif((team == "enemy") and (obj.team != self.team)):
+                    structures.append(obj)
+                elif(not team):
+                    structures.append(obj)
         return structures
 
+    def structureConsideredDead(self, turret):
+        turret_radius = 20
+        frag_radius = 80
+        frag_damage = 8
+        turret_position = turret.position
+        turret_health = turret.health
+        nearby_frags = self.nearbyStructuresofType("frag")
+        for frag in nearby_frags:
+            if(frag_radius + turret_radius > math.dist(frag.position,turret_position)):
+                turret_health -= frag_damage
+        if(turret_health <= 0):
+            return True
+        return False
     
     def nearbyEnemyStructures(self):
         enemy_structures = []
