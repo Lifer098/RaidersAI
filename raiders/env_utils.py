@@ -267,9 +267,8 @@ AgentScripts = discoverAgents()
 # example usage
 if __name__ == "__main__":
     agent_scripts = [
-        (AgentScripts.PlayerAgent(), 1, "defender"),
-        (AgentScripts.MatthewAgent(), 3, "defender"),
-        (AgentScripts.MatthewAgent(), 8, "raider")
+        (AgentScripts.BasicAgent(), 20, "raider"),
+        (AgentScripts.MatthewAgent(), 20, "defender")
     ]
 
     env = RaiderEnvironmentWrapper(mode="god")

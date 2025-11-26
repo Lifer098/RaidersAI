@@ -167,7 +167,7 @@ class MatthewAgent(BaseAgent):
         self.state = self.agent_states[id_]
 
         state = self.state.state
-
+        self.resetClick()
         
         resource_list = ("bush", "tree", "stone")
         nearby_resources = []
@@ -177,19 +177,29 @@ class MatthewAgent(BaseAgent):
         teammates, enemies = self.nearbyPlayers()
         closest_enemy, enemy_distance = self.getClosestObject(enemies)
         nearby_turrets = self.nearbyStructuresofType("turret","enemy")
-        
+        nearby_enemy_walls = self.nearbyStructuresofType("stonewall","enemy")
+
         nearby_threats = nearby_turrets + enemies
         viable_threats = [threat for threat in nearby_threats if not self.objectsInWay(threat.position, pov = "enemy")] # Check to see if there's a clear line between threat and ally
         attackable_threats = [threat for threat in nearby_threats if not self.objectsInWay(threat.position, pov = "ally")]
+        bombable_walls = [wall for wall in nearby_enemy_walls if not self.objectsInWay(wall.position, pov = "ally")]
         
         closest_target, target_distance = self.getClosestObject(attackable_threats)
         closest_threat, threat_distance = self.getClosestObject(viable_threats)
         closest_turret, turret_distance = self.nearestStructureofType("turret","enemy")
         closest_spike, spike_distance = self.nearestStructureofType("spike","enemy")
-        
+        closest_frag, frag_distance = self.nearestStructureofType("frag")
+        closest_enemy_wall, enemy_wall_distance = self.getClosestObject(bombable_walls)
+
+
+        self_pos = self.obs.self.position
+
         closest_resource, resource_distance = self.getClosestObject(nearby_resources)
         resource_position = self.state.home
-        if(closest_resource):
+        if((self.teamStr(self.team) == "raider")):
+            self.state.home = self.obs.metadata.center # Raiders should default to go to the center safely
+
+        if(closest_resource and self.obs.metadata.time < 210*20): #Agents default to their home if there's nothing to do, raiders should default directly to the center
             resource_position = closest_resource.position
         
         
@@ -197,7 +207,9 @@ class MatthewAgent(BaseAgent):
         self.state.action[2] = 3
         self.pointToTarget(resource_position)
         self.moveTowardsPos(resource_position)
-        self.spamClick()
+        if((resource_position != self.state.home) or (100 < math.dist(self_pos,self.state.home)) or self.teamStr(self.team) == "raider"): #Stops the bots from destroying their own base but raiders destroy center
+            self.spamClick()
+        
         
         
         self_radius = 15
@@ -205,20 +217,30 @@ class MatthewAgent(BaseAgent):
         attack_radius = 55
         base_radius = 40
         frag_radius = 80
-        self_pos = self.obs.self.position
         
         
-        
+        if(350>math.dist(self.obs.metadata.center,self_pos) and (self.enoughResourcesFor("turret")) and self.canPlaceObject("turret")):
+            self.spamClick()
+            self.state.action[2] = 8 
+            self.pointToTarget(self.obs.metadata.center)
+        if(enemy_wall_distance < 350 and self.enoughResourcesFor("frag")):
+            self.spamClick()
+            self.state.action[2] = 4
+            self.pointToTarget(closest_enemy_wall.position)
         if(target_distance < 500 and self.enoughResourcesFor("bow") and closest_target.type == "player"):
+            self.spamClick()
             self.state.action[2] = 2 # ADD A METHOD TO CHECK IF A BLOCK IS PLACEABLE OR INCREMENTAL ROTATIONS
             self.pointToTarget(closest_target.position)
         if(spike_distance < attack_radius):
+            self.spamClick()
             self.state.action[2] = 3
             self.pointToTarget(closest_spike.position)
         if(turret_distance < attack_radius):
+            self.spamClick()
             self.state.action[2] = 3
             self.pointToTarget(closest_turret.position)
         if(closest_target and closest_target.type == "turret" and target_distance < 350 and target_distance > 50): # If there's a nearby turret threat
+            self.spamClick()
             if(self.enoughResourcesFor("frag") and ((self.teamStr(self.team) == "raider") or base_radius + frag_radius < math.dist(self.obs.metadata.center,closest_target.position))): #Doesn't throw at base if defender
                 self.state.action[2] = 4
                 self.pointToTarget(closest_target.position)
@@ -232,6 +254,7 @@ class MatthewAgent(BaseAgent):
                 self.pointToTarget(resource_position)
                 self.moveTowardsPos(closest_target.position, away = True)
         if(((self.obs.self.health<10) or (self.lowOnResources())) and threat_distance < 120): # Run away
+            self.spamClick()
             if(self.enoughResourcesFor("bow")):
                 self.state.action[2] = 2 # ADD A METHOD TO CHECK IF A BLOCK IS PLACEABLE OR INCREMENTAL ROTATIONS
                 self.pointToTarget(closest_threat.position)
@@ -243,49 +266,47 @@ class MatthewAgent(BaseAgent):
                 self.pointToTarget(resource_position)
             self.moveTowardsPos(closest_threat.position, away = True)
         if(threat_distance < 300 and self.canPlaceWall()):
+            self.spamClick()
             self.state.action[2] = self.canPlaceWall()
             self.pointToTarget(closest_threat.position)
             self.moveTowardsPos(resource_position)
-        if((enemy_distance<80) and ((not self.lowOnResources()) or (closest_enemy.health<5))): # Attack and follow enemy if gets into range
+        if((enemy_distance<attack_radius + self_radius + 15) and ((not self.lowOnResources()) or (closest_enemy.health<5))): # Attack and follow enemy if gets into range
+            self.spamClick()
             # If low on resources, it should only follow if enemy is low on health
             self.state.action[2] = 1
             self.pointToTarget(closest_enemy.position)
             self.moveTowardsPos(closest_enemy.position)
-        if((enemy_distance < 45) and (self.enoughResourcesFor("spike")) and self.canPlaceObject()): #  and  # Spike panic if nearby enemies
-            self.state.action[2] = 7
+        if((enemy_distance<attack_radius)): # Attack and follow enemy if gets into range
+            self.spamClick()
+            # If low on resources, it should only follow if enemy is low on health
+            self.state.action[2] = 1
             self.pointToTarget(closest_enemy.position)
             self.moveTowardsPos(closest_enemy.position)
+        if((enemy_distance < self_radius + 1.4*17 + 10) and (self.enoughResourcesFor("spike")) and (self.canPlaceObjectNearby("spike")!=-1)): #  and  # Spike panic if nearby enemies
+            self.spamClick()
+            self.state.action[2] = 7
+            self.turnToPlaceObjectNearby("spike")
+            self.moveTowardsPos(closest_enemy.position)
+
+        if(frag_distance < self_radius + frag_radius+4):
+            self.moveTowardsPos(closest_frag.position, away=True)
+
         if(spike_distance < self_radius + spike_radius + 4):
             self.moveTowardsPos(closest_spike.position, away=True)
         if(self.obs.self.health < 15 and self.enoughResourcesFor("heal")):
+            self.spamClick()
             self.state.action[2] = 9
         
 
         if(self.insideStorm()):
             self.moveTowardsPos(self.obs.metadata.center)
-
-
-        match state: # basic agent operates on a Finite State Automaton
-            case self.States.IDLE:
-                self.handleIdle()
-            case self.States.PANIC:
-                self.handlePanic()
-            case self.States.TURTLE:
-                self.handleTurtle()
-            case self.States.RETREAT:
-                self.handleRetreat()
-            case self.States.COMBAT:
-                self.handleCombat()
-            case self.States.GATHER:
-                self.handleGather()
-            case self.States.EXPLORE:
-                self.handleExplore()
-        
+       
+        self.checkClick()
 
         return self.agent_states[id_].action
-    
+
     def insideStorm(self):
-        return self.obs.metadata.storm_size**2<dist2(self.obs.metadata.center,self.obs.self.position)
+        return self.obs.metadata.storm_size-10<math.dist(self.obs.metadata.center,self.obs.self.position)
     
     def canPlaceWall(self):
         if(not self.canPlaceObject()):
@@ -296,12 +317,39 @@ class MatthewAgent(BaseAgent):
             return 5
         return 0
     
-    def canPlaceObject(self):
-        dist = 15 + 1.4*17 + 10
+    def turnToPlaceObjectNearby(self,object=""):
+        angle = self.canPlaceObject(object)
+        self.state.action[4] = angle
+
+    def canPlaceObjectNearby(self,object="turret"):
+        self_angle = self.obs.self.angle
+        try_angles = ((0,2),(22.5/4,3),(-22.5/4,1),(22.5,4),(-22.5,0)) #/180*pi
+        for angle in try_angles:
+            placeable = self.canPlaceObjectatAngle(object, angle = self_angle + angle[0]/180.0*math.pi)
+            if(placeable):
+                return angle[1]
+        return -1
+        
+        
+    def canPlaceObjectatAngle(self,object="turret", angle=0):
+        self_radius = 15
+        rad_dict = {"woodwall":20,"spike":17,"turret":20,"stonewall":30} #Each object corresponds to radius of object
+        dist = self_radius + 1.4*rad_dict[object] + 10
+        dx, dy = dist*math.cos(angle), dist*math.sin(angle)
+        spike_pos = np.add(self.obs.self.position, (dx,dy))
+        for obj in self.obs.bush + self.obs.tree + self.obs.stone + self.obs.woodwall + self.obs.stonewall + self.obs.turret:
+            if math.dist(obj.position, spike_pos) <= obj.size + rad_dict[object]+3:
+                return False
+        return True
+
+    def canPlaceObject(self,object="turret"):
+        self_radius = 15
+        rad_dict = {"woodwall":20,"spike":17,"turret":20,"stonewall":30} #Each object corresponds to radius of object
+        dist = self_radius + 1.4*rad_dict[object] + 10
         dx, dy = dist*math.cos(self.obs.self.angle), dist*math.sin(self.obs.self.angle)
         spike_pos = np.add(self.obs.self.position, (dx,dy))
         for obj in self.obs.bush + self.obs.tree + self.obs.stone + self.obs.woodwall + self.obs.stonewall + self.obs.turret:
-            if math.dist(obj.position, spike_pos) <= obj.size + 30:
+            if math.dist(obj.position, spike_pos) <= obj.size + rad_dict[object]+3:
                 return False
         return True
 
@@ -318,7 +366,8 @@ class MatthewAgent(BaseAgent):
         if(action == "spike"):
             return (wood > 12) and (stone > 12)
         if(action == "turret"):
-            return (wood > 45) and (stone > 30)
+            return (wood > 150) and (stone > 150) # Shouldn't place down turrets unless bot is very stacked
+            #return (wood > 45) and (stone > 30) 
         if(action == "heal"):
             return food > 15
 
@@ -328,15 +377,28 @@ class MatthewAgent(BaseAgent):
         if self.obs.self.stone < 40: return True
         return False
 
+    def resetClick(self):
+        self.spam = 0
+
+    def spamClick(self):
+        self.spam = 1
+        
+
+    def checkClick(self):
+        if(self.spam):
+            self.state.action[3] = 1 - self.state.action[3]
+        else:
+            self.state.action[3] = 0
+
     def handleTeamObservation(self, team_observation):
         '''
         handle any macro team-wide decision making
         '''
         self.observations = team_observation
-        pass
-
-    def spamClick(self):
-        self.state.action[3] = 1 - self.state.action[3]
+        if self.__team__ == "raider":
+            self.handleTeamObservationsRaider(team_observation)
+        else:
+            self.handleTeamObservationsDefender(team_observation)
 
     def handleTeamObservationsRaider(self, team_observations):
         pass
@@ -344,52 +406,6 @@ class MatthewAgent(BaseAgent):
 
     def handleTeamObservationsDefender(self, team_observations):
         # handle defender decision making
-        pass
-            
-
-    def handleIdle(self):
-        '''
-        transition, decision-making
-        '''
-        pass
-
-    def handlePanic(self):
-        '''
-        wandering the map
-        '''
-
-        pass
-
-    def handleTurtle(self):
-        '''
-        collecting resources within vicinity
-        '''
-
-        pass
-
-    def handleRetreat(self):
-        '''
-        group with other teammates
-        '''
-        pass
-
-    def handleCombat(self):
-        '''
-        advance on enemies and deal damage
-        '''
-        pass
-
-    def handleGather(self):
-        '''
-        run away from enemies
-        '''
-        pass
-
-
-    def handleExplore(self):
-        '''
-        hold a position and clear a path forward
-        '''
         pass
 
     def objectsInWay(self, target_pos, size=None, pov=""):
@@ -424,7 +440,7 @@ class MatthewAgent(BaseAgent):
     def nearbyStructuresofType(self, structure_name, team = ""):
         structures = []
         for obj in self.obs[structure_name]:
-            if(structure_name != "turret" or (not self.structureConsideredDead(obj))):
+            if((not structure_name in ("turret","stonewall")) or (not self.structureConsideredDead(obj))):
                 if((team == "ally") and (obj.team == self.team)):
                     structures.append(obj)
                 elif((team == "enemy") and (obj.team != self.team)):
@@ -433,15 +449,15 @@ class MatthewAgent(BaseAgent):
                     structures.append(obj)
         return structures
 
-    def structureConsideredDead(self, turret):
-        turret_radius = 20
+    def structureConsideredDead(self, structure):
+        turret_radius = structure.size
         frag_radius = 80
         frag_damage = 8
-        turret_position = turret.position
-        turret_health = turret.health
+        turret_position = structure.position
+        turret_health = structure.health
         nearby_frags = self.nearbyStructuresofType("frag")
         for frag in nearby_frags:
-            if(frag_radius + turret_radius > math.dist(frag.position,turret_position)):
+            if(frag_radius + turret_radius + 12 > math.dist(frag.position,turret_position)): # Check if enough frags nearby that would explode to be enough to kill turret
                 turret_health -= frag_damage
         if(turret_health <= 0):
             return True
