@@ -410,6 +410,20 @@ class DUMMYPLAYER():
         self.wood = 0
         self.stone = 0
         self.team = -1
+        self.events = AttrDict({
+            "change_food": 0,
+            "change_wood": 0,
+            "change_stone": 0,
+            "change_health": 0,
+            "change_health_enemy_player": 0,
+            "damage_dealt_enemy_structure": 0,
+            "change_health_team_player": 0,
+            "damage_dealt_team_structure": 0,
+            "killed_enemy_player": 0,
+            "died": 0,
+            "self_damage_dealt_base": 0,
+            "damage_dealt_base": 0,
+        })
     
     def changeHealth(self, v): pass
     def changeFood(self, v): pass
@@ -600,7 +614,7 @@ class Player():
                             self.changeStone(-self.costs.spike[1])
                 case Actives.TURRET:
                     if self.wood >= self.costs.turret[0] and self.stone >= self.costs.turret[1]:
-                        valid = self.place(Turret(self.env, (-1, -1), self.angle, self.team, self))
+                        valid = self.place(BaseTurret(self.env, (-1, -1), self.angle, self.team, self))
                         if valid:
                             self.changeWood(-self.costs.turret[0])
                             self.changeStone(-self.costs.turret[1])
@@ -892,7 +906,7 @@ class Player():
                 self.place(obj, place=False)
                 obj.display()
             case 8:
-                obj = Turret(self.env, (-1, -1), self.angle, self.team, self)
+                obj = BaseTurret(self.env, (-1, -1), self.angle, self.team, self)
                 self.place(obj, place=False)
                 obj.display(place=True)
             case 10:
@@ -1278,7 +1292,7 @@ class Explosion():
             "position": self.pos,
             "size": self.size,
         })
-
+    
 class Turret():
     def __init__(self, env, pos, angle, team, player):
         self.env = env
@@ -1395,6 +1409,197 @@ class Turret():
         pygame.draw.circle(self.env.surface, [darken(self.env.colors.grey, scale=1.2), self.env.colors.white][self.hit], self.pos, self.size/2+3)
         pygame.draw.circle(self.env.surface, [darken(self.env.colors.grey, scale=1.7), self.env.colors.white][self.hit], self.pos, self.size/2)
         pygame.draw.circle(self.env.surface, [self.player.color, self.env.colors.white][self.hit], self.pos, self.size/2-4)
+    
+    def getInfo(self):
+        return AttrDict({
+            "type": "turret",
+            "position": self.pos,
+            "size": self.size,
+            "angle": self.angle,
+            "team": self.team,
+            "health": self.health,
+            "reload": self.attack_tick,
+        })
+    
+class BigBullet(Frag):
+    def __init__(self, env, pos, angle, team, player):
+        super().__init__(env, pos, angle, team, player)
+
+        self.lifetime = 3*20
+
+        self.damage = 8
+        self.speed = 15
+        self.friction = 0.99
+        self.size = 24
+    
+    def step(self, subframes=4):
+        if self.lifetime == 0:
+            self.env.removeDynamicObject(self)
+            self.env.addDynamicObject(BigExplosion(self.env, self.pos, self.team, self.player))
+            return 
+        self.lifetime -= 1
+
+        self.objects = self.env.grid.getNearbyObjects(self.pos) + self.env.dynamic_objects
+
+        dx, dy = self.speed*math.cos(self.angle)/subframes, self.speed*math.sin(self.angle)/subframes
+        for frame in range(subframes):
+            if (not self.env.grid.withinBounds(np.add(self.pos, (dx,dy)))):
+                self.speed = 0
+                return
+            self.pos = (self.pos[0]+dx, self.pos[1]+dy)
+            for obj in self.objects:
+                if ((isinstance(obj, StaticObject) and type(obj) not in {Base, StoneWall, Spike, Turret, Scattershot}) or (type(obj) not in {Player, Frag} and obj.team != self.team)) \
+                    and math.dist(obj.pos, self.pos) <= obj.size + self.size - 0.5:
+                    if isinstance(obj, Projectile):
+                        continue
+                    self.speed = 0
+                    return
+        
+        self.speed *= self.friction
+
+    def resetState(self):
+        pass
+
+    def display(self):
+        pygame.draw.circle(self.env.surface, self.env.colors.white, self.pos, self.size)
+    
+    def getInfo(self):
+        return AttrDict({
+            "type": "frag",
+            "position": self.pos,
+            "size": self.size,
+            "angle": self.angle,
+            "lifetime": self.lifetime,
+        })
+
+class BigExplosion(Explosion):
+    def __init__(self, env, pos, team, player):
+        self.env = env
+        self.pos = pos
+        self.team = team
+        self.player = player
+
+        self.damage = 80
+        self.size = 200
+
+        self.lifetime = 1
+    
+    def step(self):
+        if self.lifetime == 0:
+            self.env.addSound("explosion", self.pos, 0.5)
+            self.env.removeDynamicObject(self)
+            return
+        self.lifetime -= 1
+
+        self.objects = self.env.grid.getNearbyObjects(self.pos) + self.env.dynamic_objects
+        for obj in self.objects:
+            if (math.dist(obj.pos, self.pos) <= obj.size + self.size - 0.5):
+                if type(obj) in {Player, Turret, Scattershot, Spike, Base}:
+                    obj.recieveHit(self, self.damage, self.player)
+                elif type(obj) in self.env.resources:
+                    obj.recieveHit(self, self.damage*2, self.player)
+                elif type(obj) in {WoodWall, StoneWall}:
+                    obj.recieveHit(self, self.damage, self.player)
+    
+    def resetState(self):
+        pass
+
+    def display(self):
+        pygame.draw.circle(self.env.surface, self.env.colors.white+(180,), self.pos, self.size)
+    
+    def getInfo(self):
+        return AttrDict({
+            "type": "explosion",
+            "position": self.pos,
+            "size": self.size,
+        })
+
+class BaseTurret(Turret):
+    def __init__(self, env, pos, angle, team, player):
+        super().__init__(env, pos, angle, team, player)
+
+        self.health = 20
+        self.damage = 5
+        self.reload_speed = 40
+        self.attack_tick = 30
+        self.range = 300
+        self.size = 35
+
+        self.hit = False
+
+    def recieveHit(self, obj, damage, player):
+        self.hit = True
+        damage = min(self.health, damage)
+        self.health -= damage
+
+        if self.team == player.team:
+            player.events.damage_dealt_team_structure += damage
+        else:   
+            player.events.damage_dealt_enemy_structure += damage
+        
+        if self.health <= 0:
+            if isinstance(obj, Player):
+                obj.changeWood(15)
+                obj.changeStone(8)
+            self.env.removeDynamicObject(self)
+            self.env.addSound("stonedie", self.pos, 0.5)
+        self.env.addSound("structurehit", self.pos, 0.6)
+    
+    def attack(self):
+        dx, dy = 20*math.cos(self.angle), 20*math.sin(self.angle)
+        da = 4/180*math.pi
+        obj = BigBullet(self.env, self.pos, self.angle, self.team, self.env.dummy_player)
+        self.env.addDynamicObject(obj)
+        self.attack_tick = self.reload_speed
+        self.env.addSound("turretfire", self.pos, 0.4)
+
+    def resetState(self):
+        self.hit = False
+
+    def display(self, place=False):
+        if not place:
+            self.env.drawOnMinimap(self.pos, [self.color, (240, 180, 100)][self.team-1], opacity=255)
+
+        pygame.draw.circle(self.env.surface, [darken(self.env.colors.brown, scale=0.85), self.env.colors.white][self.hit], self.pos, self.size)
+        pygame.draw.circle(self.env.surface, [self.env.colors.brown, self.env.colors.white][self.hit], self.pos, self.size-5)
+
+        d1 = (0.4*self.size*math.cos(self.angle+math.pi/2), 0.4*self.size*math.sin(self.angle+math.pi/2))
+        d2 = (0.4*self.size*math.cos(self.angle-math.pi/2), 0.4*self.size*math.sin(self.angle-math.pi/2))
+        p1 = self.pos
+        p2 = self.pos[0] + 1.5*self.size*math.cos(self.angle), self.pos[1] + 1.5*self.size*math.sin(self.angle)
+        coords = (
+            np.add(p1,d1),
+            np.add(p1,d2),
+            np.add(p2,d2),
+            np.add(p2,d1)
+        )
+        pygame.draw.polygon(self.env.surface, [darken(self.env.colors.grey, 1.1), self.env.colors.white][self.hit], coords)
+
+        d1 = (self.size*math.cos(self.angle+math.pi/2), self.size*math.sin(self.angle+math.pi/2))
+        d2 = (0.4*self.size*math.cos(self.angle+math.pi/2), 0.4*self.size*math.sin(self.angle+math.pi/2))
+        p1 = self.pos
+        p2 = self.pos[0] + 1.2*self.size*math.cos(self.angle), self.pos[1] + 1.2*self.size*math.sin(self.angle)
+        p3 = self.pos[0] + 1.8*self.size*math.cos(self.angle), self.pos[1] + 1.8*self.size*math.sin(self.angle)
+        coords = (
+            np.add(p1,d1),
+            np.add(p1,d2),
+            np.add(p3,d2),
+            np.add(p2,d1)
+        )
+        pygame.draw.polygon(self.env.surface, [darken(self.env.colors.grey), self.env.colors.white][self.hit], coords)
+        coords = (
+            np.subtract(p1,d1),
+            np.subtract(p1,d2),
+            np.subtract(p3,d2),
+            np.subtract(p2,d1)
+        )
+        pygame.draw.polygon(self.env.surface, [darken(self.env.colors.grey), self.env.colors.white][self.hit], coords)
+
+        pygame.draw.circle(self.env.surface, [darken(self.env.colors.grey, scale=1.2), self.env.colors.white][self.hit], self.pos, self.size/2+3)
+        pygame.draw.circle(self.env.surface, [darken(self.env.colors.grey, scale=1.7), self.env.colors.white][self.hit], self.pos, self.size/2)
+        pygame.draw.circle(self.env.surface, [self.player.color, self.env.colors.white][self.hit], self.pos, self.size/2-4)
+        pygame.draw.circle(self.env.surface, [darken(self.env.colors.grey, scale=1.7), self.env.colors.white][self.hit], self.pos, self.size/2-6)
+        pygame.draw.circle(self.env.surface, [self.player.color, self.env.colors.white][self.hit], self.pos, self.size/2-8)
     
     def getInfo(self):
         return AttrDict({
@@ -2134,7 +2339,7 @@ class RaiderEnvironment():
         return observations, info
     
     def initializePlayer(self, player, team):
-        player.food, player.wood, player.stone = (50, 120, 120) if team==1 else (80, 80, 80)
+        player.food, player.wood, player.stone = (50, 120, 120) if team==1 else (80, 90, 80)
         self.setSpawnLoc(self.map_size[0] * [0.12, 0.4][team-1], player)
     
     def getTeamCounts(self):
