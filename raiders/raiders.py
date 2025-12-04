@@ -1,18 +1,23 @@
 import pygame
+import pygame.surfarray as surfarray
+
 import numpy as np
 import random, math, os
 import keyboard as k
 from attrdict import AttrDict
-import math
+import math, time
 import pickle
+
+from enum import IntEnum
 
 from abc import ABC, abstractmethod
 
-from sound_utils import SoundUtils
+from raiders.sound_utils import SoundUtils
 
 pygame.init()
 pygame.display.set_mode((1, 1))  # Minimal dummy window
 
+WHITE = (255,255,255)
 
 def darken(color, scale=0.8):
     return tuple(c*scale for c in color)
@@ -43,19 +48,31 @@ def cast(value: str):
         return int(value)
     except ValueError:
         return value  # Return original string if no match
-        
-cache_folder = "assets_cache"
+
+
+def loadAsset(file):
+    base_dir = os.path.dirname(__file__)
+    assets_dir = os.path.join(base_dir, "assets")
+
+    if ".png" == file[-4:]:
+        return pygame.image.load(os.path.join(assets_dir, "images", file))
+    else:
+        print("Cannot load asset {file}")
+
+base_dir = os.path.dirname(__file__)
+assets_dir = os.path.join(base_dir, "assets")
+cache_folder = os.path.join(base_dir, "assets", "images")
 
 image_files = [f for f in os.listdir(cache_folder) if f.endswith((".png", ".jpg", ".jpeg"))]
 keys = [tuple(cast(v) for v in info[:-4].split('_')) for info in image_files]
 
 sprites = {
-    "raider": pygame.image.load("assets/raider.png"),
-    "defender": pygame.image.load("assets/defender.png"),
-    "sword": pygame.image.load("assets/sword.png"),
-    "bow": pygame.image.load("assets/bow.png"),
-    "axe": pygame.image.load("assets/axe.png"),
-    "arrow": pygame.image.load("assets/arrow.png"),
+    "raider": loadAsset("raider.png"),
+    "defender": loadAsset("defender.png"),
+    "sword": loadAsset("sword.png"),
+    "bow": loadAsset("bow.png"),
+    "axe": loadAsset("axe.png"),
+    "arrow": loadAsset("arrow.png"),
 }
 for key, path in zip(keys, image_files):
     surf = pygame.image.load(os.path.join(cache_folder, path)).convert()
@@ -66,6 +83,41 @@ for key, path in zip(keys, image_files):
 class StaticDisplays:
 
     sprites = sprites
+
+    @staticmethod
+    def minimapDisplay(surface, pos, info):
+        match info[0]:
+            case -1:
+                StaticDisplays.Player_staticDisplay(surface, pos, info)
+            case 0:
+                StaticDisplays.Heal_staticDisplay(surface, pos, info)
+            case 1:
+                StaticDisplays.Arrow_staticDisplay(surface, pos, info)
+            case 2:
+                StaticDisplays.ChargedArrow_staticDisplay(surface, pos, info)
+            case 3:
+                StaticDisplays.Bullet_staticDisplay(surface, pos, info)
+            case 4:
+                StaticDisplays.Frag_staticDisplay(surface, pos, info)
+            case 5:
+                StaticDisplays.Explosion_staticDisplay(surface, pos, info)
+            case 6:
+                StaticDisplays.Turret_staticDisplay(surface, pos, info)
+            case 7:
+                StaticDisplays.drawSprite(surface, "bush", pos, info[3], info[5])
+            case 8:
+                StaticDisplays.drawSprite(surface, "tree", pos, info[3], info[5])
+            case 9:
+                StaticDisplays.drawSprite(surface, "stone", pos, info[3], info[5])
+            case 10:
+                StaticDisplays.WoodWall_staticDisplay(surface, pos, info)
+            case 11:
+                StaticDisplays.StoneWall_staticDisplay(surface, pos, info)
+            case 12:
+                t = "spike2" if info[6] > 200 else "spike1"
+                StaticDisplays.drawSprite(surface, t, pos, info[3], info[5])
+            case 13:
+                StaticDisplays.Base_staticDisplay(surface, pos, info)
 
     @staticmethod
     def display(surface, pos, info):
@@ -364,15 +416,30 @@ class DUMMYPLAYER():
     def changeWood(self, v): pass
     def changeStone(self, v): pass
 
+
+class Actives(IntEnum):
+    SWORD = 1
+    BOW = 2
+    AXE = 3
+    FRAG = 4
+    WOODWALL = 5
+    STONEWALL = 6
+    SPIKE = 7
+    TURRET = 8
+    HEAL = 9
+    SCATTERSHOT = 10
+
+
 class Player():
     def __init__(self, env, pos, team, id_):
         self.costs = AttrDict({
             "arrow": 2,
-            "frag": 10,
+            "frag": 15,
             "woodwall": 10,
             "stonewall": 20,
             "spike": (12, 12),
-            "turret": (45, 30),
+            "turret": (90, 70),
+            "scattershot": (40, 30),
             "heal": 15,
         })
 
@@ -385,7 +452,10 @@ class Player():
         self.size = 15
         self.color = self.env.colors[f"team{self.team}"]
 
-        self.health = 20
+        self.dead_tick = 0
+        self.max_dead_tick = 20
+
+        self.health = 30
         self.attack_tick = 0
         self.attack_frames = None
         self.attacking = False
@@ -403,9 +473,12 @@ class Player():
         self.active = 1
         self.active_attack = -1
 
-        self.axe_resource_bonus = 0.5
-        self.axe_wall_bonus = 1
-        
+        self.sword_resource_damage = 2
+        self.sword_wall_damage = 3
+        self.axe_resource_damage = 6
+        self.axe_wall_damage = 12
+
+        self.view_minimap = 0    
 
         self.food = 100
         self.wood = 200
@@ -455,7 +528,7 @@ class Player():
         self.events.change_stone += stone
         self.stone += stone
 
-    def step(self, ax, ay, active, action, angle):
+    def step(self, ax, ay, active, action, angle, view_minimap=0):
         '''
         0: don't switch
         1: sword
@@ -468,6 +541,14 @@ class Player():
         8: turret
         9: heal
         '''
+        self.view_minimap = view_minimap
+
+        if self.health <= 0:
+            self.dead_tick = min(self.dead_tick+1, self.max_dead_tick)
+            return
+        else:
+            self.dead_tick = 0
+        
         self.objects = self.env.grid.getNearbyObjects(self.pos)
         
         if active:
@@ -483,47 +564,53 @@ class Player():
         if action:
             self.consec_held += 1
             match self.active:
-                case 1:
+                case Actives.SWORD:
                     if self.active_attack == -1:
                         self.active_attack = 1
-                        self.startAttack(damage=4, frames=(15,10,7))
-                case 2:
+                        self.startAttack(damage=5, frames=(15,10,7))
+                case Actives.BOW:
                     if self.active_attack == -1 and self.wood >= self.costs.arrow:
                         self.changeWood(-self.costs.arrow)
                         self.active_attack = 2
                         self.startAttack(damage=4, frames=(25,18,17))
-                case 3:
+                case Actives.AXE:
                     if self.active_attack == -1:
                         self.active_attack = 3
                         self.startAttack(damage=6, frames=(25,17,14))
-                case 4:
+                case Actives.FRAG:
                     if self.active_attack == -1 and self.stone >= self.costs.frag:
                         self.changeStone(-self.costs.frag)
                         self.active_attack = 4
                         self.startAttack(damage=5, frames=(12,11,10))
-                case 5:
+                case Actives.WOODWALL:
                     if self.wood >= self.costs.woodwall:
                         valid = self.place(WoodWall(self.env, (-1, -1), self.team))
                         if valid:
                             self.changeWood(-self.costs.woodwall)
-                case 6:
+                case Actives.STONEWALL:
                     if self.stone >= self.costs.stonewall:
                         valid = self.place(StoneWall(self.env, (-1, -1), self.team))
                         if valid:
                             self.changeStone(-self.costs.stonewall)
-                case 7:
+                case Actives.SPIKE:
                     if self.wood >= self.costs.spike[0] and self.stone >= self.costs.spike[1]:
                         valid = self.place(Spike(self.env, (-1, -1), self.team, self))
                         if valid:
                             self.changeWood(-self.costs.spike[0])
                             self.changeStone(-self.costs.spike[1])
-                case 8:
+                case Actives.TURRET:
                     if self.wood >= self.costs.turret[0] and self.stone >= self.costs.turret[1]:
                         valid = self.place(Turret(self.env, (-1, -1), self.angle, self.team, self))
                         if valid:
                             self.changeWood(-self.costs.turret[0])
                             self.changeStone(-self.costs.turret[1])
-                case 9:
+                case Actives.SCATTERSHOT:
+                    if self.wood >= self.costs.scattershot[0] and self.stone >= self.costs.scattershot[1]:
+                        valid = self.place(Scattershot(self.env, (-1, -1), self.angle, self.team, self))
+                        if valid:
+                            self.changeWood(-self.costs.scattershot[0])
+                            self.changeStone(-self.costs.scattershot[1])
+                case Actives.HEAL:
                     if self.food >= self.costs.heal:
                         self.place(Heal(self.env, (-1, -1), self))
                         self.changeFood(-self.costs.heal)
@@ -574,15 +661,22 @@ class Player():
                 if isinstance(obj, Player) and obj.team == self.team:
                     continue
                 if obj not in self.hit_objects and \
-                   (isinstance(obj, StaticObject) or (type(obj) in (Turret,)) or (type(obj) in {Player, Base} and obj.team != self.team)) and \
+                   (isinstance(obj, StaticObject) or (type(obj) in (Turret, Scattershot)) or (type(obj) in {Player, Base} and obj.team != self.team)) and \
                    (math.dist(obj.pos, p1) <= obj.size + self.attack_size or \
-                   math.dist(obj.pos, p1) <= obj.size + self.attack_size or \
+                   math.dist(obj.pos, p2) <= obj.size + self.attack_size or \
                    math.dist(obj.pos, p3) <= obj.size + self.attack_size):
-                    if self.active_attack == 3: # axe has damage bonuses against objects
+                    if self.active_attack == 1: # sword
                         if type(obj) in self.env.resources: 
-                            obj.recieveHit(self, self.damage * (1+self.axe_resource_bonus), self)
+                            obj.recieveHit(self, self.sword_resource_damage, self)
                         elif type(obj) in self.env.walls:
-                            obj.recieveHit(self, self.damage * (1+self.axe_wall_bonus), self)
+                            obj.recieveHit(self, self.sword_wall_damage, self)
+                        else:
+                            obj.recieveHit(self, self.damage, self)
+                    elif self.active_attack == 3: # axe has damage bonuses against objects
+                        if type(obj) in self.env.resources: 
+                            obj.recieveHit(self, self.axe_resource_damage, self)
+                        elif type(obj) in self.env.walls:
+                            obj.recieveHit(self, self.axe_wall_damage, self)
                         else:
                             obj.recieveHit(self, self.damage, self)
                     else:
@@ -633,7 +727,7 @@ class Player():
                 player.changeWood(20 + self.wood//6)
                 player.changeStone(20 + self.stone//6)
                 player.kills += 1
-            self.events.dead = 1
+            self.events.died = 1
             self.env.removeDynamicObject(self)
             self.env.addSound("playerdie", self.pos, 0.8)
 
@@ -657,20 +751,21 @@ class Player():
         if not place:
             return False
 
-        if type(obj) in {WoodWall, StoneWall, Turret, Spike}:
+        if type(obj) in {WoodWall, StoneWall, Turret, Scattershot, Spike}:
             for obj2 in self.objects + self.env.dynamic_objects:
-                if type(obj2) not in self.env.resources | self.env.walls | {Turret}:
+                if type(obj2) not in self.env.resources | self.env.walls | {Turret, Scattershot}:
                     continue
                 if math.dist(obj.pos, obj2.pos) <= obj.size + obj2.size - 0.5:
                     return False
 
 
-        if type(obj) in {Arrow, ChargedArrow, Frag, Turret, Spike}:
+        if type(obj) in {Arrow, ChargedArrow, Frag, Spike}:
             self.env.addDynamicObject(obj)
             if isinstance(obj, Spike):
                 self.env.addSound("turretplace", obj.pos, 0.6)
-            if isinstance(obj, Turret):
-                self.env.addSound("turretplace", obj.pos, 0.6)
+        elif isinstance(obj, Turret):
+            self.env.addDynamicObject(obj)
+            self.env.addSound("turretplace", obj.pos, 0.6)
         elif type(obj) in {WoodWall, StoneWall}:
             self.env.addObject(obj)
             if isinstance(obj, WoodWall):
@@ -691,7 +786,7 @@ class Player():
         for obj in self.objects + self.env.dynamic_objects:
             if obj is self:
                 continue
-            if type(obj) not in {Player, Turret} | self.env.resources | self.env.walls:
+            if type(obj) not in {Player, Turret, Scattershot} | self.env.resources | self.env.walls:
                 continue
             if (d:=math.dist(obj.pos, self.pos)) <= obj.size + self.size - 0.5:
                 d = max(0.1, d)
@@ -720,6 +815,12 @@ class Player():
         self.hit = False
 
     def display(self):
+        # TODO: blits in this
+        if self.team == 2:
+            self.env.drawOnMinimap(self.pos, self.color, 6, 255)
+        else:
+            self.env.drawOnMinimap(self.pos, (100, 180, 240), 6, 255)
+
         dx, dy = 14*math.cos(self.angle), 14*math.sin(self.angle)
 
         windup = -40
@@ -727,6 +828,9 @@ class Player():
         rest = 0
         anticipation = 2
         attack_offset = 0
+
+        def round_to_5625(x):
+            return (round(x / 5.625) * 5.625) % 360
 
         match self.active:
             case 1:
@@ -740,19 +844,21 @@ class Player():
                     else:
                         scale = (self.frames[0] - self.attack_tick) / (self.frames[0]-self.frames[1]-anticipation)
                         attack_offset = rest*(1-scale) + windup*scale
-                rotated_image = pygame.transform.rotate(self.env.sprites.sword, -(self.angle)/math.pi*180-attack_offset)
-                if self.frames[2] < self.attack_tick < self.frames[1]+anticipation:
-                    rotated_image.fill((100, 100, 100, 0), special_flags=pygame.BLEND_RGBA_ADD)
+                #rotated_image = pygame.transform.rotate(self.env.sprites.sword, -(self.angle)/math.pi*180+attack_offset)
+                _angle = round_to_5625(-(self.angle)/math.pi*180+attack_offset)
+                _active = self.frames[2] < self.attack_tick < self.frames[1]+anticipation
+                rotated_image = self.env.sprites[("sword", _angle, _active)]
                 image_rect = rotated_image.get_rect()
                 image_rect.center = self.pos
                 self.env.surface.blit(rotated_image, image_rect)
                 #pygame.draw.circle(self.env.surface, self.env.colors.white, self.pos, self.size/2)
             case 2:
-                rotated_image = pygame.transform.rotate(self.env.sprites.bow, -(self.angle)/math.pi*180)
+                _angle = round_to_5625(-(self.angle)/math.pi*180+attack_offset)
+                rotated_image = self.env.sprites[("bow",_angle, False)]
                 image_rect = rotated_image.get_rect()
                 image_rect.center = self.pos
                 self.env.surface.blit(rotated_image, image_rect)
-                pygame.draw.circle(self.env.surface, self.env.colors.brown, self.pos, self.size/2)
+                #pygame.draw.circle(self.env.surface, self.env.colors.brown, self.pos, self.size/2)
             case 3:
                 if self.attack_tick:
                     if self.attack_tick <= self.frames[2]:
@@ -764,9 +870,9 @@ class Player():
                     else:
                         scale = (self.frames[0] - self.attack_tick) / (self.frames[0]-self.frames[1]-anticipation)
                         attack_offset = rest*(1-scale) + windup*scale
-                rotated_image = pygame.transform.rotate(self.env.sprites.axe, -(self.angle)/math.pi*180-attack_offset)
-                if self.frames[2] < self.attack_tick < self.frames[1]+anticipation:
-                    rotated_image.fill((100, 100, 100, 0), special_flags=pygame.BLEND_RGBA_ADD)
+                _angle = round_to_5625(-(self.angle)/math.pi*180+attack_offset)
+                _active = self.frames[2] < self.attack_tick < self.frames[1]+anticipation
+                rotated_image = self.env.sprites[("axe", _angle, _active)]
                 image_rect = rotated_image.get_rect()
                 image_rect.center = self.pos
                 self.env.surface.blit(rotated_image, image_rect)
@@ -780,7 +886,7 @@ class Player():
             case 6:
                 obj = StoneWall(self.env, (-1, -1), self.team)
                 self.place(obj, place=False)
-                obj.display()
+                obj.display(place=True)
             case 7:
                 obj = Spike(self.env, (-1, -1), self.team, self)
                 self.place(obj, place=False)
@@ -788,35 +894,28 @@ class Player():
             case 8:
                 obj = Turret(self.env, (-1, -1), self.angle, self.team, self)
                 self.place(obj, place=False)
-                obj.display()
+                obj.display(place=True)
+            case 10:
+                obj = Scattershot(self.env, (-1, -1), self.angle, self.team, self)
+                self.place(obj, place=False)
+                obj.display(place=True)
             case 9:
                 pygame.draw.circle(self.env.surface, self.env.colors.mutedlightred, self.pos, self.size/2)
         
         offset = 60 / 180 * math.pi
-        attack_offset = attack_offset / 180 * math.pi
+        attack_offset = -attack_offset / 180 * math.pi
         dx2, dy2 = 14*math.cos(self.angle+offset+attack_offset), 14*math.sin(self.angle+offset+attack_offset)
         dx3, dy3 = 14*math.cos(self.angle-offset+attack_offset), 14*math.sin(self.angle-offset+attack_offset)
 
         border_color = darken(self.color)
 
-        pygame.draw.circle(self.env.surface, [border_color, self.env.colors.white][self.hit], np.add(self.pos, (dx2,dy2)), self.size/2)
-        pygame.draw.circle(self.env.surface, [border_color, self.env.colors.white][self.hit], np.add(self.pos, (dx3,dy3)), self.size/2)
-        pygame.draw.circle(self.env.surface, [self.color, self.env.colors.white][self.hit], np.add(self.pos, (dx2,dy2)), self.size/2-1.5)
-        pygame.draw.circle(self.env.surface, [self.color, self.env.colors.white][self.hit], np.add(self.pos, (dx3,dy3)), self.size/2-1.5)
-        #sprite = self.env.sprites.defender if self.team == 1 else self.env.sprites.raider
-        #rotated_image = pygame.transform.rotate(sprite, -(self.angle)/math.pi*180-attack_offset)
-        #if self.frames[2] < self.attack_tick < self.frames[1]+anticipation:
-        #    rotated_image.fill((100, 100, 100, 0), special_flags=pygame.BLEND_RGBA_ADD)
-        #image_rect = rotated_image.get_rect()
-        #image_rect.center = self.pos
-        #self.env.surface.blit(rotated_image, image_rect)
-        pygame.draw.circle(self.env.surface, [border_color, self.env.colors.white][self.hit], self.pos, self.size)
-        pygame.draw.circle(self.env.surface, [self.color, self.env.colors.white][self.hit], self.pos, self.size-1.5)
+        pygame.draw.circle(self.env.surface, [border_color, WHITE][self.hit], np.add(self.pos, (dx2,dy2)), self.size/2)
+        pygame.draw.circle(self.env.surface, [border_color, WHITE][self.hit], np.add(self.pos, (dx3,dy3)), self.size/2)
+        pygame.draw.circle(self.env.surface, [self.color, WHITE][self.hit], np.add(self.pos, (dx2,dy2)), self.size/2-1.5)
+        pygame.draw.circle(self.env.surface, [self.color, WHITE][self.hit], np.add(self.pos, (dx3,dy3)), self.size/2-1.5)
 
-        #if self.attacking and self.active_attack in (1,3):
-        #    pygame.draw.circle(self.env.surface, self.env.colors.white, np.add(self.pos, (dx,dy)), self.attack_size)
-        #    pygame.draw.circle(self.env.surface, self.env.colors.white, np.add(self.pos, (2*dx,2*dy)), self.attack_size)
-        #    pygame.draw.circle(self.env.surface, self.env.colors.white, np.add(self.pos, (3*dx,3*dy)), self.attack_size)
+        pygame.draw.circle(self.env.surface, [border_color, WHITE][self.hit], self.pos, self.size)
+        pygame.draw.circle(self.env.surface, [self.color, WHITE][self.hit], self.pos, self.size-1.5)
                     
     def getInfo(self):
         return AttrDict({
@@ -859,7 +958,7 @@ class StaticObject():
     def recieveHit(self, obj, damage, player):
         if isinstance(obj, Player):
             self.hit = True
-            damage = min(self.health, damage//3)
+            damage = min(self.health, damage)
             self.health -= damage
             self.recieveHitPlayer(obj, damage)
         elif isinstance(obj, Explosion):
@@ -897,7 +996,7 @@ class Effect():
         self.player = player
 
         self.size = 40
-        self.effect_speed = 20
+        self.effect_speed = 5
         self.effect_tick = 0
         self.lifetime = 80
     
@@ -923,10 +1022,13 @@ class Effect():
 class Heal(Effect):
     def __init__(self, env, pos, player):
         super().__init__(env, pos, player)
-        self.healing = 2
+        self.healing = 0.5
     
     def effectPlayer(self, player):
-        healing = min(player.health + self.healing, 25) - player.health
+        if self.lifetime == 80:
+            healing = min(player.health + self.healing*6, 40) - player.health
+        else:
+            healing = min(player.health + self.healing, 40) - player.health
         player.changeHealth(healing)
         self.player.events.change_health_team_player += healing
         
@@ -969,7 +1071,7 @@ class Projectile():
                 self.env.removeDynamicObject(self)
                 return
             for obj in self.objects:
-                if ((isinstance(obj, StaticObject) and (type(obj) not in (Base, StoneWall, Spike))) or (type(obj) in {Player, Turret, Base, Spike, StoneWall} and obj.team != self.team)) \
+                if ((isinstance(obj, StaticObject) and (type(obj) not in (Base, StoneWall, Spike))) or (type(obj) in {Player, Turret, Scattershot, Base, Spike, StoneWall} and obj.team != self.team)) \
                     and math.dist(obj.pos, self.pos) <= obj.size + self.size - 0.5:
                     if isinstance(obj, Spike):
                         continue
@@ -1056,11 +1158,12 @@ class ChargedArrow(Projectile):
         })
 
 class Bullet(Projectile):
-    def __init__(self, env, pos, angle, team, player):
+    def __init__(self, env, pos, angle, team, player, damage, speed, size, range):
         super().__init__(env, pos, angle, team, player)
-        self.damage = 5
-        self.speed = 15
-        self.size = 10
+        self.damage = damage
+        self.speed = speed
+        self.size = size
+        self.lifetime = range / speed
 
     def collision(self, obj):
         self.env.addSound("bullethit", self.pos, 0.5)
@@ -1110,7 +1213,7 @@ class Frag():
                 return
             self.pos = (self.pos[0]+dx, self.pos[1]+dy)
             for obj in self.objects:
-                if ((isinstance(obj, StaticObject) and type(obj) not in {Base, StoneWall, Spike, Turret}) or (type(obj) not in {Player} and obj.team != self.team)) \
+                if ((isinstance(obj, StaticObject) and type(obj) not in {Base, StoneWall, Spike, Turret, Scattershot}) or (type(obj) not in {Player} and obj.team != self.team)) \
                     and math.dist(obj.pos, self.pos) <= obj.size + self.size - 0.5:
                     if isinstance(obj, Projectile):
                         continue
@@ -1156,12 +1259,12 @@ class Explosion():
         self.objects = self.env.grid.getNearbyObjects(self.pos) + self.env.dynamic_objects
         for obj in self.objects:
             if (math.dist(obj.pos, self.pos) <= obj.size + self.size - 0.5):
-                if type(obj) in {Player, Turret, Spike, Base}:
+                if type(obj) in {Player, Turret, Scattershot, Spike, Base}:
                     obj.recieveHit(self, self.damage, self.player)
                 elif type(obj) in self.env.resources:
                     obj.recieveHit(self, self.damage*2, self.player)
                 elif type(obj) in {WoodWall, StoneWall}:
-                    obj.recieveHit(self, self.damage*4, self.player)
+                    obj.recieveHit(self, self.damage, self.player)
     
     def resetState(self):
         pass
@@ -1189,7 +1292,7 @@ class Turret():
         self.damage = 5
         self.reload_speed = 50
         self.attack_tick = 30
-        self.range = 400
+        self.range = 750
         self.size = 20
 
         self.hit = False
@@ -1215,6 +1318,9 @@ class Turret():
                 if obj.team != self.team and math.dist(obj.pos, self.pos) < closest_distance:
                     closest_obj = obj
                     closest_distance = math.dist(obj.pos, self.pos)
+
+            if closest_distance > self.range:
+                closest_obj = None
         else:
             closest_obj = closest_player
 
@@ -1249,7 +1355,7 @@ class Turret():
     
     def attack(self):
         dx, dy = 20*math.cos(self.angle), 20*math.sin(self.angle)
-        obj = Bullet(self.env, np.add(self.pos, (dx, dy)), self.angle, self.team, self.player)
+        obj = Bullet(self.env, np.add(self.pos, (dx, dy)), self.angle, self.team, self.player, damage=8, speed=20, size=10, range=self.range)
         self.env.addDynamicObject(obj)
         self.attack_tick = self.reload_speed
         self.env.addSound("turretfire", self.pos, 0.4)
@@ -1257,7 +1363,10 @@ class Turret():
     def resetState(self):
         self.hit = False
 
-    def display(self):
+    def display(self, place=False):
+        if not place:
+            self.env.drawOnMinimap(self.pos, [self.color, (240, 180, 100)][self.team-1], opacity=255)
+
         pygame.draw.circle(self.env.surface, [darken(self.env.colors.brown, scale=0.85), self.env.colors.white][self.hit], self.pos, self.size)
         pygame.draw.circle(self.env.surface, [self.env.colors.brown, self.env.colors.white][self.hit], self.pos, self.size-3)
 
@@ -1297,10 +1406,109 @@ class Turret():
             "health": self.health,
             "reload": self.attack_tick,
         })
+    
+class Scattershot(Turret):
+    def __init__(self, env, pos, angle, team, player):
+        super().__init__(env, pos, angle, team, player)
+
+        self.health = 20
+        self.damage = 5
+        self.reload_speed = 40
+        self.attack_tick = 30
+        self.range = 300
+        self.size = 17
+
+        self.hit = False
+
+    def recieveHit(self, obj, damage, player):
+        self.hit = True
+        damage = min(self.health, damage)
+        self.health -= damage
+
+        if self.team == player.team:
+            player.events.damage_dealt_team_structure += damage
+        else:   
+            player.events.damage_dealt_enemy_structure += damage
+        
+        if self.health <= 0:
+            if isinstance(obj, Player):
+                obj.changeWood(15)
+                obj.changeStone(8)
+            self.env.removeDynamicObject(self)
+            self.env.addSound("stonedie", self.pos, 0.5)
+        self.env.addSound("structurehit", self.pos, 0.6)
+    
+    def attack(self):
+        dx, dy = 20*math.cos(self.angle), 20*math.sin(self.angle)
+        da = 4/180*math.pi
+        for i in range(5):
+            i = i-2
+            obj = Bullet(self.env, np.add(self.pos, (dx, dy)), self.angle+da*(i*abs(i)), self.team, self.player, damage=1.5, speed=20, size=6, range=300)
+            self.env.addDynamicObject(obj)
+        self.attack_tick = self.reload_speed
+        self.env.addSound("turretfire", self.pos, 0.4)
+
+    def resetState(self):
+        self.hit = False
+
+    def display(self, place=False):
+        if not place:
+            self.env.drawOnMinimap(self.pos, [self.color, (240, 180, 100)][self.team-1], opacity=255)
+
+        pygame.draw.circle(self.env.surface, [darken(self.env.colors.lightbrown, scale=0.45), self.env.colors.white][self.hit], self.pos, self.size)
+        pygame.draw.circle(self.env.surface, [darken(self.env.colors.lightbrown, scale=0.6), self.env.colors.white][self.hit], self.pos, self.size-3)
+
+        d1 = (0.5*self.size*math.cos(self.angle+math.pi/2), 0.5*self.size*math.sin(self.angle+math.pi/2))
+        d2 = (0.5*self.size*math.cos(self.angle-math.pi/2), 0.5*self.size*math.sin(self.angle-math.pi/2))
+        p1 = self.pos
+        p2 = self.pos[0] + 1.35*self.size*math.cos(self.angle), self.pos[1] + 1.35*self.size*math.sin(self.angle)
+        coords = (
+            np.add(p1,d1),
+            np.add(p1,d2),
+            np.add(p2,d2),
+            np.add(p2,d1)
+        )
+        pygame.draw.polygon(self.env.surface, [darken(self.env.colors.grey), self.env.colors.white][self.hit], coords)
+        d1 = (0.4*self.size*math.cos(self.angle+math.pi/2), 0.4*self.size*math.sin(self.angle+math.pi/2))
+        d2 = (0.1*self.size*math.cos(self.angle+math.pi/2), 0.1*self.size*math.sin(self.angle+math.pi/2))
+        p1 = self.pos
+        p2 = self.pos[0] + 1.2*self.size*math.cos(self.angle), self.pos[1] + 1.2*self.size*math.sin(self.angle)
+        coords = (
+            np.add(p1,d1),
+            np.add(p1,d2),
+            np.add(p2,d2),
+            np.add(p2,d1)
+        )
+        pygame.draw.polygon(self.env.surface, [darken(self.env.colors.grey, 1.1), self.env.colors.white][self.hit], coords)
+        d1 = (0.4*self.size*math.cos(self.angle-math.pi/2), 0.4*self.size*math.sin(self.angle-math.pi/2))
+        d2 = (0.1*self.size*math.cos(self.angle-math.pi/2), 0.1*self.size*math.sin(self.angle-math.pi/2))
+        p1 = self.pos
+        p2 = self.pos[0] + 1.2*self.size*math.cos(self.angle), self.pos[1] + 1.2*self.size*math.sin(self.angle)
+        coords = (
+            np.add(p1,d1),
+            np.add(p1,d2),
+            np.add(p2,d2),
+            np.add(p2,d1)
+        )
+        pygame.draw.polygon(self.env.surface, [darken(self.env.colors.grey, 1.1), self.env.colors.white][self.hit], coords)
+        pygame.draw.circle(self.env.surface, [darken(self.env.colors.grey, scale=1.2), self.env.colors.white][self.hit], self.pos, self.size/2+3)
+        pygame.draw.circle(self.env.surface, [darken(self.env.colors.grey, scale=1.7), self.env.colors.white][self.hit], self.pos, self.size/2)
+        pygame.draw.circle(self.env.surface, [self.player.color, self.env.colors.white][self.hit], self.pos, self.size/2-4)
+    
+    def getInfo(self):
+        return AttrDict({
+            "type": "turret",
+            "position": self.pos,
+            "size": self.size,
+            "angle": self.angle,
+            "team": self.team,
+            "health": self.health,
+            "reload": self.attack_tick,
+        })
 
 class Bush(StaticObject):
     def __init__(self, env, pos):
-        super().__init__(env, pos, 20, 15)
+        super().__init__(env, pos, size=20, health=15)
 
     def recieveHitPlayer(self, player, damage):
         player.changeFood(damage)
@@ -1309,6 +1517,7 @@ class Bush(StaticObject):
         self.env.addSound("bushhit", self.pos, 1)
 
     def display(self):
+        self.env.drawOnMinimap(self.pos, (200, 40, 70), opacity=120)
         self.env.drawSprite("bush", self.pos, self.health, self.hit)
     
     def getInfo(self):
@@ -1321,7 +1530,7 @@ class Bush(StaticObject):
 
 class Tree(StaticObject):
     def __init__(self, env, pos):
-        super().__init__(env, pos, 30, 20)
+        super().__init__(env, pos, size=30, health=20)
 
     def recieveHitPlayer(self, player, damage):
         player.changeWood(damage)
@@ -1331,6 +1540,7 @@ class Tree(StaticObject):
         self.env.addSound("bushhit", self.pos, 0.4)
 
     def display(self):
+        self.env.drawOnMinimap(self.pos, (50, 190, 40))
         self.env.drawSprite("tree", self.pos, self.health, self.hit)
     
     def getInfo(self):
@@ -1343,7 +1553,7 @@ class Tree(StaticObject):
 
 class Stone(StaticObject):
     def __init__(self, env, pos):
-        super().__init__(env, pos, 40, 50)
+        super().__init__(env, pos, size=40, health=50)
 
     def recieveHitPlayer(self, player, damage):
         player.changeStone(damage)
@@ -1351,6 +1561,7 @@ class Stone(StaticObject):
         self.env.addSound("stonehit", self.pos, 1)
 
     def display(self):
+        self.env.drawOnMinimap(self.pos, (160, 160, 160), opacity=200)
         self.env.drawSprite("stone", self.pos, self.health, self.hit)
     
     def getInfo(self):
@@ -1363,7 +1574,7 @@ class Stone(StaticObject):
 
 class WoodWall(StaticObject):
     def __init__(self, env, pos, team):
-        super().__init__(env, pos, 20, 25)
+        super().__init__(env, pos, size=20, health=25)
         self.team = team
 
         self.darken_brown = darken(self.env.colors.brown, scale=0.87)
@@ -1371,7 +1582,6 @@ class WoodWall(StaticObject):
         self.white = self.env.colors.white
 
     def recieveHitPlayer(self, player, damage):
-        self.health += damage//3 - damage
         self.env.addSound("woodhit", self.pos, 0.4)
         if self.health <= 0:
             player.changeWood(5)
@@ -1400,7 +1610,7 @@ class WoodWall(StaticObject):
 
 class StoneWall(StaticObject):
     def __init__(self, env, pos, team):
-        super().__init__(env, pos, 30, 75)
+        super().__init__(env, pos, size=30, health=75)
         self.team = team
         self.color = self.env.colors[f"team{self.team}"]
         self.darken_grey = darken(self.env.colors.grey, scale=0.95)
@@ -1408,7 +1618,6 @@ class StoneWall(StaticObject):
         self.white = self.env.colors.white
 
     def recieveHitPlayer(self, player, damage):
-        self.health += damage//3 - damage
         self.env.addSound("stoneplace", self.pos, 0.6)
         if self.health <= 0:
             player.changeStone(8)
@@ -1421,7 +1630,13 @@ class StoneWall(StaticObject):
         if self.health < 0:
             self.env.addSound("stonedie", self.pos, 0.5)
 
-    def display(self):
+    def display(self, place=False):
+        if not place:
+            if self.team == 2:
+                self.env.drawOnMinimap(self.pos, self.color, r=6, opacity=180)
+            else:
+                self.env.drawOnMinimap(self.pos, (100, 180, 240), r=6, opacity=180)
+
         pygame.draw.polygon(self.env.surface, self.env.colors.white if self.hit else self.darken_grey, polygon(self.pos, self.size, 8))
         pygame.draw.polygon(self.env.surface, self.env.colors.white if self.hit else self.color, polygon(self.pos, self.size-5, 8))
         pygame.draw.polygon(self.env.surface, self.env.colors.white if self.hit else self.grey, polygon(self.pos, self.size-9, 8))
@@ -1438,7 +1653,7 @@ class StoneWall(StaticObject):
     
 class Spike(StaticObject):
     def __init__(self, env, pos, team, player):
-        super().__init__(env, pos, 17, 35)
+        super().__init__(env, pos, size=17, health=35)
         self.team = team
         self.player = player
         self.damage = 3
@@ -1446,7 +1661,6 @@ class Spike(StaticObject):
         self.count = 0
 
     def recieveHitPlayer(self, player, damage):
-        self.health += damage//3 - damage
         if self.health <= 0:
             player.changeWood(4)
             player.changeStone(4)
@@ -1484,7 +1698,7 @@ class Spike(StaticObject):
 
 class Base(StaticObject):
     def __init__(self, env, pos, team):
-        super().__init__(env, pos, 40, 100)
+        super().__init__(env, pos, size=40, health=100)
         self.team = team
         self.regen = 2
     
@@ -1523,6 +1737,9 @@ class Base(StaticObject):
             self.health = min(100, self.health + 0.01)
 
     def display(self):
+        if self.hit:
+            self.env.drawOnMinimap(self.pos, (255,100,100), 10, 255)
+
         scale = max(self.health, 0) / 100
         if scale:
             pygame.draw.circle(self.env.surface, (160, 185, 220), self.pos, 48)
@@ -1663,7 +1880,7 @@ class RaiderEnvironment():
         self.resources = {Bush, Tree, Stone}
         self.walls = {WoodWall, StoneWall, Spike}
         
-        self.map_size = [2000, 2000]
+        self.map_size = [4000, 4000]
         self.center = [self.map_size[0]//2, self.map_size[1]//2]
         self.screen_size = 800, 800
         self.screen_center = [self.screen_size[0]//2, self.screen_size[1]//2]
@@ -1676,7 +1893,13 @@ class RaiderEnvironment():
         self.dummy_player = DUMMYPLAYER()
 
         self.surface = pygame.Surface(self.map_size, pygame.SRCALPHA)
+        self.scaled_surface = pygame.Surface((860,860), pygame.SRCALPHA)
+        self.minimap_surface = pygame.Surface((300,300), pygame.SRCALPHA)
+        self.defender_mask_surface = pygame.Surface((300,300), pygame.SRCALPHA)
+        self.raider_mask_surface = pygame.Surface((300,300), pygame.SRCALPHA)
+        self.storm_surface = pygame.Surface(self.map_size)
         self.background_surface = pygame.Surface(self.map_size, pygame.SRCALPHA)
+        
         self.screen = pygame.display.set_mode(self.screen_size)
         self.clock = pygame.time.Clock()
         self.t = 0
@@ -1690,8 +1913,14 @@ class RaiderEnvironment():
             "time": self.t,
             "storm_size": self.max_storm_size,
         })
-
-        self.initializeSprites()
+        
+        initialized = False
+        while not initialized:
+            try:
+                self.initializeSprites()
+                initialized = True
+            except:
+                time.sleep(random.randint(1,5))
 
         self.players = {}
         self.reset()
@@ -1714,15 +1943,51 @@ class RaiderEnvironment():
             self.dynamic_objects.remove(player)
         del self.players[id_]
 
+    def prerender_rotations(self, names=("sword","bow","axe"), step=1, cutoff=250):
+        def _binarize_alpha(surf, cutoff):
+            s = surf.convert_alpha()
+            a = pygame.surfarray.pixels_alpha(s)
+            a[:] = (a >= cutoff) * 255
+            del a
+            return s
+        
+        # step=1 → 360 frames; use step=2/3 to save memory
+        for name in names:
+            base = self.sprites[name]  # assumes already loaded
+            for deg in range(0, 64):
+                deg *= 5.625
+                rot = pygame.transform.rotate(base, deg)
+                rot = _binarize_alpha(rot, cutoff=cutoff)
+                # store: ('sword','rot',deg) etc.
+                opaque = rot.convert()
+                opaque.set_colorkey((0, 0, 0))
+                self.sprites[(name, deg, False)] = opaque
+                opaque = rot.convert()
+                opaque.set_colorkey((0, 0, 0))
+                self.fill_visible_pixels(opaque)
+                self.sprites[(name, deg, True)] = opaque
+
     def initializeSprites(self):
+        self.font = pygame.font.Font(None, 30) 
+        self.font2 = pygame.font.Font(None, 40) 
+        self.font3 = pygame.font.SysFont("Consolas", 10) 
+        self.font4 = pygame.font.SysFont("Consolas", 7)
         self.sprites = AttrDict({
-            "raider": pygame.image.load("assets/raider.png"),
-            "defender": pygame.image.load("assets/defender.png"),
-            "sword": pygame.image.load("assets/sword.png"),
-            "bow": pygame.image.load("assets/bow.png"),
-            "axe": pygame.image.load("assets/axe.png"),
-            "arrow": pygame.image.load("assets/arrow.png"),
+            "raider": loadAsset("raider.png"),
+            "defender": loadAsset("defender.png"),
+            "sword": loadAsset("sword.png").convert_alpha(),
+            "bow": loadAsset("bow.png").convert_alpha(),
+            "axe": loadAsset("axe.png").convert_alpha(),
+            "arrow": loadAsset("arrow.png").convert_alpha(),
+            "food_icon": loadAsset("food.png").convert_alpha(),
+            "wood_icon": loadAsset("wood.png").convert_alpha(),
+            "stone_icon": loadAsset("stone.png").convert_alpha(),
         })
+        self.sprites["food_icon_scaled"] = pygame.transform.scale(self.sprites.food_icon, (9,9))
+        self.sprites["wood_icon_scaled"] = pygame.transform.scale(self.sprites.wood_icon, (9,9))
+        self.sprites["stone_icon_scaled"] = pygame.transform.scale(self.sprites.stone_icon, (9,9))
+        
+        self.prerender_rotations()
 
         image_size = (100, 100)
         center = (50, 50)
@@ -1785,7 +2050,7 @@ class RaiderEnvironment():
         
         for name, surf in self.sprites.items():
             if isinstance(name, tuple):
-                pygame.image.save(surf, f"assets_cache/{'_'.join(str(s) for s in name)}.png")
+                pygame.image.save(surf, os.path.join(cache_folder, f"{'_'.join(str(s) for s in name)}.png"))
 
     
     def generateHealthLookups(self, type, surface, instance):
@@ -1833,6 +2098,7 @@ class RaiderEnvironment():
         self.surface.blit(sprite_surface, rect)
 
     def reset(self):
+        self.storm_surface.fill((0,0,0,0))
         self.grid = Grid(self, 200)
         self.base = Base(self, (self.map_size[0]/2, self.map_size[1]/2), 1)
         self.storm_size = self.max_storm_size
@@ -1868,7 +2134,7 @@ class RaiderEnvironment():
         return observations, info
     
     def initializePlayer(self, player, team):
-        player.food, player.wood, player.stone = (50, 120, 120) if team==1 else (80, 50, 50)
+        player.food, player.wood, player.stone = (50, 120, 120) if team==1 else (80, 80, 80)
         self.setSpawnLoc(self.map_size[0] * [0.12, 0.4][team-1], player)
     
     def getTeamCounts(self):
@@ -1882,7 +2148,7 @@ class RaiderEnvironment():
     def addSound(self, sound, pos, scale):
         self.sounds.append((SoundUtils.encodeSoundID(sound), *pos, scale))
 
-    def addDeposits(self, bushes=(70,6), trees=(100,8), stones=(40,4)):        
+    def addDeposits(self, bushes=(140,6), trees=(200,8), stones=(80,4)):        
         for _ in range(stones[0]):
             x, y = self.getSpawnLoc()
             self.addObject(Stone(self, (x,y)))
@@ -1956,8 +2222,13 @@ class RaiderEnvironment():
     
     def removeEffect(self, obj):
         self.effects.remove(obj)
+    
+    def drawOnMinimap(self, pos, color, r=4, opacity=100):
+        scale = self.minimap_surface.get_width() / self.surface.get_width()
+        minimap_pos = self.scale(pos, scale)
+        pygame.draw.circle(self.minimap_surface, color+(opacity,), minimap_pos, r)
 
-    def step(self, actions, display=False):
+    def step(self, actions, display=False, get_inputs=False):
         self.t += 1
         self.storm_size = max(0, min(1, (self.t - 180*20) / (300*20 - 180*20))) * (self.min_storm_size - self.max_storm_size) + self.max_storm_size
         self.metadata.time = self.t
@@ -1968,12 +2239,12 @@ class RaiderEnvironment():
             obj.resetState()
 
         for n, action in actions.items():
-            if self.players[n].health <= 0: continue
             # check to see if actions are valid
-            ax, ay, active, action_, angle = action
+            action = tuple(int(_) for _ in action)
+            ax, ay, active, action_, angle = action[:5]
             assert (0 <= ax <= 2) and (int(ax) == ax), f"Invalid Action[0]: {ax}, {ay}, {active}, {action_}, {angle}"
             assert (0 <= ay <= 2) and (int(ay) == ay), f"Invalid Action[1]: {ax}, {ay}, {active}, {action_}, {angle}"
-            assert (0 <= active <= 9) and (int(active) == active), f"Invalid Action[2]: {ax}, {ay}, {active}, {action_}, {angle}"
+            assert (0 <= active) and (int(active) == active), f"Invalid Action[2]: {ax}, {ay}, {active}, {action_}, {angle}"
             assert (0 <= action_ <= 1) and (int(action_) == action_), f"Invalid Action[3]: {ax}, {ay}, {active}, {action_}, {angle}"
             assert (0 <= angle <= 4) and (int(angle) == angle), f"Invalid Action[4]: {ax}, {ay}, {active}, {action_}, {angle}"
             dx = action[0] - 1
@@ -1981,7 +2252,8 @@ class RaiderEnvironment():
             active = action[2]
             attack = action[3]
             angle = 0.0981747704247 * (action[4]-2) * (abs(action[4]-2))
-            self.players[n].step(dx, dy, active, attack, angle)
+            action = (dx, dy, active, action_, angle) + tuple(action[5:])
+            self.players[n].step(*action)
 
         for obj in self.dynamic_objects:
             if isinstance(obj, Player):
@@ -1999,6 +2271,7 @@ class RaiderEnvironment():
 
         pygame.event.pump()
         self.surface.fill(self.colors.green)
+        self.minimap_surface.fill((35, 35, 35, 50))
 
         for obj in self.effects:
             obj.display()
@@ -2021,11 +2294,11 @@ class RaiderEnvironment():
             if not isinstance(obj, Tree):
                 continue
             obj.display()
-
-        mask = pygame.Surface(self.map_size, pygame.SRCALPHA)
-        mask.fill((255, 0, 0, 120))  # semi-transparent red
-        pygame.draw.circle(mask, (0, 0, 0, 0), self.center, int(self.storm_size))  # transparent center
-        self.surface.blit(mask, (0, 0))
+        
+        if self.storm_size != self.max_storm_size:
+            if self.storm_size != self.min_storm_size:
+                pygame.draw.circle(self.storm_surface, (100, 0, 30), self.center, int(self.storm_size), width=3)  # transparent center
+            self.surface.blit(self.storm_surface, (0, 0), special_flags=pygame.BLEND_RGB_ADD)
 
         for player in self.getPlayers():
             if player.health <= 0:
@@ -2037,6 +2310,47 @@ class RaiderEnvironment():
             if health_ratio > 1:
                 absorption_ratio = health_ratio - 1
                 pygame.draw.rect(self.surface, (255,220,90), (player.pos[0]+(bar_width-3)*(0.5-absorption_ratio), player.pos[1]+21, (bar_width-3)*absorption_ratio, 3))
+
+        # --- Build masks directly ---
+
+        self.raider_mask_surface.fill((0, 0, 0, 50))
+        self.defender_mask_surface.fill((0, 0, 0, 50))
+        
+        scale = self.minimap_surface.get_width() / self.surface.get_width()
+
+        for player in self.getPlayers():
+            if player.dead_tick == player.max_dead_tick:
+                continue
+
+            # Compute the minimap rectangle
+            x = int(player.pos[0] - 500)
+            y = int(player.pos[1] - 500)
+
+            x = int(self.clamp(x, 0, self.map_size[0] - 1000) * scale)
+            y = int(self.clamp(y, 0, self.map_size[1] - 1000) * scale)
+
+            w = int(1000 * scale)
+            h = int(1000 * scale)
+
+            # Vectorized fill: no loops at all
+            if player.team == 1:
+                pygame.draw.rect(self.defender_mask_surface, (255,255,255,255), pygame.Rect(x,y,w,h))
+            elif player.team == 2:
+                pygame.draw.rect(self.raider_mask_surface, (255,255,255,255), pygame.Rect(x,y,w,h))
+
+        # Create masked minimaps
+        self.defender_minimap = self.minimap_surface.copy()
+        self.defender_minimap.blit(self.defender_mask_surface, (0,0), special_flags=pygame.BLEND_RGBA_MIN)
+
+        self.raider_minimap = self.minimap_surface.copy()
+        self.raider_minimap.blit(self.raider_mask_surface, (0,0), special_flags=pygame.BLEND_RGBA_MIN)
+        
+        if not get_inputs:
+            return
+
+        self.defender_minimap_scaled = pygame.transform.scale(self.defender_minimap, (86, 86))
+        self.raider_minimap_scaled = pygame.transform.scale(self.raider_minimap, (86, 86))
+        self.scaled_surface = pygame.transform.scale(self.surface, (860,860))
 
         done, winning_team = self.gameIsDone()
 
@@ -2053,10 +2367,12 @@ class RaiderEnvironment():
 
         if display:
             frame = self.camera.getFrame(self.surface)
-            frame = pygame.transform.flip(frame, False, True)
+            #frame = pygame.transform.flip(frame, False, True)
             pygame.transform.scale(frame, self.screen_size, self.screen)
             pygame.display.flip()
             self.clock.tick(20)
+        else:
+            pygame.event.pump()
 
         return observations, winning_team, done, term, info
 
@@ -2079,18 +2395,55 @@ class RaiderEnvironment():
         #        (0 == sum([max(0, p.health) for p in self.players[:self.teams[0]]])) or (0 == sum([max(0, p.health) for p in self.players[self.teams[0]:]])))
 
     
-    def getInputs(self, id_):
-        scale = 0.25
-        h, w = int(self.map_size[0] * scale), int(self.map_size[1] * scale)
-        small_surface = pygame.transform.scale(self.surface, (w, h))
-        np_surface = pygame.surfarray.pixels3d(small_surface)
+    def clamp(self, x, min_, max_):
+        return min(max_, max(min_, x))
+    
+    def scale(self, x, s, round_=False):
+        if round_:
+            return [round(v * s) for v in x]
+        else:
+            return [v * s for v in x]
 
+    def getInputs(self, id_):
         player = self.players[id_]
 
-        x, y = int(player.pos[0]*scale), int(player.pos[1]*scale)
-        w, h = int(600*scale), int(600*scale)
-        x, y, w, h = [int(_) for _ in [x,y,w,h]]
-        obs = np_surface[x:x+w , y:y+h]
+        x, y = int(player.pos[0]-300), int(player.pos[1]-300)
+        x = self.clamp(x, 0, self.map_size[0]-600)
+        y = self.clamp(y, 0, self.map_size[1]-600)
+        w, h = 128, 128
+        x, y = [int(_/(self.map_size[0]/430)) for _ in [x,y]]
+        rect = pygame.Rect(x, y, w, h)
+        # TODO: this
+        frame = self.scaled_surface.subsurface(rect).copy()
+        #frame = pygame.transform.flip(frame, False, True)
+        
+        if player.view_minimap:
+            match player.team:
+                case 1:
+                    frame.blit(self.defender_minimap_scaled, (21,21))
+                case 2:
+                    frame.blit(self.raider_minimap_scaled, (21,21))
+
+        teams = self.getTeamCounts()
+        hyphen_surf = self.font3.render(f"-", True, (255,255,255))
+        hyphen_rect = hyphen_surf.get_rect(center=(64, 6))
+        defenders_surf = self.font3.render(f"{teams[0]}", True, (140, 220, 255))
+        defenders_rect = defenders_surf.get_rect(topright=hyphen_rect.topleft)
+        raiders_surf = self.font3.render(f"{teams[1]}", True, (255, 140, 80))
+        raiders_rect = raiders_surf.get_rect(topleft=hyphen_rect.topright)
+        frame.blit(hyphen_surf, hyphen_rect)
+        frame.blit(defenders_surf, defenders_rect)
+        frame.blit(raiders_surf, raiders_rect)
+
+        for img, text, y in zip(
+            (self.sprites.food_icon_scaled, self.sprites.wood_icon_scaled, self.sprites.stone_icon_scaled), 
+            (player.food, player.wood, player.stone), 
+            (90, 101, 112)):
+            frame.blit(img, (3, y))
+            text_surf = self.font4.render(str(int(text)), True, (255,255,255))
+            frame.blit(text_surf, (13, y+2))
+
+        obs = pygame.surfarray.pixels3d(frame).transpose(1,0,2)
 
         vec_obs = np.array([
             (player.team),
@@ -2104,16 +2457,16 @@ class RaiderEnvironment():
             "metadata": self.metadata,
             "image_obs": obs,
             "vector_obs": vec_obs,
+            "self": player.getInfo(),
         })
 
         for type in ("base", "spike", "stonewall", "woodwall", "turret", "stone", "tree", "bush", "explosion", "frag", "bullet", "chargedarrow", "arrow", "heal", "player"):
             info[type] = []
 
-        info["self"] = player.getInfo()
         objects = self.grid.getNearbyObjects(player.pos, size=2) + self.dynamic_objects + self.effects
         for obj in objects:
             dx, dy = obj.pos[0]-player.pos[0], obj.pos[1]-player.pos[1]
-            if abs(dx) > 320 or abs(dy) > 320:
+            if abs(dx) > 510 or abs(dy) > 510:
                 continue
 
             obj_info = obj.getInfo()

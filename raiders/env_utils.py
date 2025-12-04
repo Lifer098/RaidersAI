@@ -1,6 +1,7 @@
 import pygame
 import numpy as np
 import random, math, os
+import cv2
 import importlib
 import inspect
 import keyboard as k
@@ -8,11 +9,11 @@ from attrdict import AttrDict
 import math, time
 from enum import Enum
 
-from raiders import RaiderEnvironment
-from sound_utils import SoundUtils
-from agents.base_agent import BaseAgent
-from agents.player_agent import PlayerAgent
-
+from raiders.raiders import RaiderEnvironment, loadAsset, Actives
+from raiders.sound_utils import SoundUtils
+from raiders.agents.base_agent import BaseAgent
+from raiders.agents.player_agent import PlayerAgent
+from raiders import global_events
 
 def discoverAgents():
     agent_classes = {}
@@ -20,7 +21,7 @@ def discoverAgents():
 
     for filename in os.listdir(agents_dir):
         if filename.endswith(".py") and not filename.startswith("__"):
-            module_name = f"agents.{filename[:-3]}"
+            module_name = f"raiders.agents.{filename[:-3]}"
             try:
                 module = importlib.import_module(module_name)
                 for name, obj in inspect.getmembers(module, inspect.isclass):
@@ -54,20 +55,29 @@ class RaiderEnvironmentWrapper():
         self.mode = mode
         self.env = RaiderEnvironment()
 
-        self.food_img = pygame.image.load("assets/food.png")
-        self.wood_img = pygame.image.load("assets/wood.png")
-        self.stone_img = pygame.image.load("assets/stone.png")
+        self.food_img = loadAsset("food.png")
+        self.wood_img = loadAsset("wood.png")
+        self.stone_img = loadAsset("stone.png")
+
+        icon_dir = os.path.join(os.path.dirname(__file__), "assets/images/icons")
+        icon_files = [f for f in os.listdir(icon_dir) if f.endswith((".png"))]
+        self.icons = AttrDict({
+            f[:-4] : loadAsset(f"icons/{f}") for f in icon_files
+        })
+
         self.font = pygame.font.Font(None, 30) 
         self.font2 = pygame.font.Font(None, 25) 
+        self.font3 = pygame.font.Font(None, 40) 
 
         self.scripts = []
         self.active_ids = {}
-        self.hover_player = 1
+        self.hover_player = 0
         self.camera_mode = mode
         
         self.t = time.time()
         self.framerate = 0
         self.speedup = False
+        self.framerate_buffer = []
 
         self.reset()
 
@@ -86,7 +96,7 @@ class RaiderEnvironmentWrapper():
         return tuple(self.active_ids.keys())
 
     def getAvailableID(self):
-        return max(tuple(self.active_ids.keys()) + (0,))+1
+        return max(tuple(self.active_ids.keys()) + (-1,))+1
     
     def addAgent(self, team=None, script=None):
         if script is None:
@@ -141,9 +151,16 @@ class RaiderEnvironmentWrapper():
             if script is None: continue
             action = script.getAction(observations[id_], id_)
             self.actions[id_] = action
+        
+        return observations, info
 
-    def step(self, display=False, sounds=False, debug=False):   
-        observations, rewards, terminated, truncated, info = self.env.step(self.actions)
+    def step(self, display=False, sounds=False, debug=False, get_inputs=True):   
+        if not get_inputs:
+            self.env.step(self.actions, get_inputs=False)
+            
+        observations, winning_team, terminated, truncated, info = self.env.step(self.actions, get_inputs=True)
+        self.observations = observations
+        #cv2.imshow("img", cv2.resize(observations[0].image_obs, (800,800), interpolation=cv2.INTER_NEAREST))
 
         for script in self.scripts:
             team = script.__team__
@@ -158,17 +175,31 @@ class RaiderEnvironmentWrapper():
         if self.mode == "god":
             self.cameraControl()
 
+        framerate = int(1 / max((time.time() - self.t), 0.0001))
+        self.framerate_buffer.append(framerate)
+        if len(self.framerate_buffer) == 50:
+            self.framerate = int(sum(self.framerate_buffer) / len(self.framerate_buffer))
+            self.framerate_buffer = []
+        self.t = time.time()
+
         if display:
             self.display(self.hover_player, sounds, debug)
+            #self.env.clock.tick(20)
+            if self.speedup:
+                self.env.clock.tick(60)
+            else:    
+                self.env.clock.tick(20)
+        else:
+            pygame.event.pump()
         
-        return observations, rewards, terminated, truncated, info
+        return observations, winning_team, terminated, truncated, info
     
     def display(self, player_id, sounds, debug):
         old_camera_scale = self.env.camera.scale
         old_camera_center = self.env.camera.frame_rect.center
 
         if not (self.mode == "god" and self.camera_mode == "god"):
-            self.env.camera.scale = 300
+            self.env.camera.scale = 500
             player_obj = self.env.players[player_id]
             self.env.camera.frame_rect.center = player_obj.pos
 
@@ -180,16 +211,60 @@ class RaiderEnvironmentWrapper():
                 script.debug(self.env.surface, id_)
         
         frame = self.env.camera.getFrame(self.env.surface)
-        frame = pygame.transform.flip(frame, False, True)
+        #frame = pygame.transform.flip(frame, False, True)
 
         if not (self.mode == "god" and self.camera_mode == "god"):
+            player_observation = self.observations[player_id].self
+
             for img, text, y in zip(
                 (self.food_img, self.wood_img, self.stone_img), 
                 (player_obj.food, player_obj.wood, player_obj.stone), 
-                (420, 470, 520)):
+                (120, 170, 220)):
                 frame.blit(img, (15, y))
                 text_surf = self.font.render(str(int(text)), True, (255,255,255))
                 frame.blit(text_surf, (60, y+10))
+
+            active = player_observation.active
+            num_actives = 8
+            icons = ["sword", "bow", "axe", "frag", "woodwall", "stonewall", "spike", "turret", "sword", "sword", "sword", "frag", "woodwall", "stonewall", "spike", "turret"]
+            for i in range(num_actives):
+                icon = self.icons[icons[i]]
+                if i+1 == active:
+                    icon.set_alpha(255)
+                else:
+                    icon.set_alpha(150)
+                frame.blit(icon, (500 + 65*(i-num_actives/2), 900))
+            
+            choices = []
+            match active:
+                case Actives.TURRET | Actives.SCATTERSHOT:
+                    choices = [Actives.TURRET, Actives.SCATTERSHOT]
+            
+            num_choices = len(choices)
+            for i in range(num_choices-1, -1, -1):
+                icon = self.icons["sword"]
+                if choices[i] == active:
+                    icon.set_alpha(255)
+                else:
+                    icon.set_alpha(150)
+                frame.blit(icon, (900, 500 - 65*i))
+
+            match player_obj.team:
+                case 1:
+                    frame.blit(self.env.defender_minimap, (675,25))
+                case 2:
+                    frame.blit(self.env.raider_minimap, (675,25))
+            
+            teams = self.env.getTeamCounts()
+            hyphen_surf = self.font3.render(f" - ", True, (255,255,255))
+            hyphen_rect = hyphen_surf.get_rect(center=(500, 30))
+            defenders_surf = self.font3.render(f"{teams[0]}", True, (140, 220, 255))
+            defenders_rect = defenders_surf.get_rect(topright=hyphen_rect.topleft)
+            raiders_surf = self.font3.render(f"{teams[1]}", True, (255, 140, 80))
+            raiders_rect = raiders_surf.get_rect(topleft=hyphen_rect.topright)
+            frame.blit(hyphen_surf, hyphen_rect)
+            frame.blit(defenders_surf, defenders_rect)
+            frame.blit(raiders_surf, raiders_rect)
 
         pygame.transform.scale(frame, self.env.screen_size, self.env.screen)
         t = self.env.t // 20
@@ -201,13 +276,6 @@ class RaiderEnvironmentWrapper():
         text_rect = text_surf.get_rect(midright=(780, 20))
         self.env.screen.blit(text_surf, text_rect)
         pygame.display.flip()
-
-        self.framerate = int(1 / (time.time() - self.t))
-        if self.speedup:
-            self.env.clock.tick(60)
-        else:    
-            self.env.clock.tick(20)
-        self.t = time.time()
 
         self.env.camera.scale = old_camera_scale
         self.env.camera.frame_rect.center = old_camera_center
@@ -224,7 +292,7 @@ class RaiderEnvironmentWrapper():
 
 
     def cameraControl(self):
-        for event in pygame.event.get():
+        for event in global_events.events:
             if event.type == pygame.QUIT:
                 running = False
             
@@ -234,6 +302,9 @@ class RaiderEnvironmentWrapper():
                 if event.key == pygame.K_SPACE:
                     self.camera_mode = ["god", "hover_player"][self.camera_mode == "god"]
                     print(self.camera_mode)
+                
+                if event.key == pygame.K_f:
+                    self.speedup = not self.speedup
                 
                 if self.camera_mode == "hover_player":
                     player_ids = list(self.env.players.keys())
@@ -251,15 +322,11 @@ class RaiderEnvironmentWrapper():
             self.env.camera.scale *= 0.9
         if keys[pygame.K_MINUS]:
             self.env.camera.scale /= 0.9
-        if keys[pygame.K_f]:
-            self.speedup = True
-        else:
-            self.speedup = False
             
         if keys[pygame.K_LEFT]: self.env.camera.frame_rect.move_ip(-10,0)
         if keys[pygame.K_RIGHT]: self.env.camera.frame_rect.move_ip(10,0)
-        if keys[pygame.K_DOWN]: self.env.camera.frame_rect.move_ip(0,-10)
-        if keys[pygame.K_UP]: self.env.camera.frame_rect.move_ip(0,10)
+        if keys[pygame.K_DOWN]: self.env.camera.frame_rect.move_ip(0,10)
+        if keys[pygame.K_UP]: self.env.camera.frame_rect.move_ip(0,-10)
         
 pygame.init()
 AgentScripts = discoverAgents()
@@ -277,6 +344,7 @@ if __name__ == "__main__":
     env.reset()
     c = 0
     while True:
+        global_events.events = pygame.event.get()
         if c == 0:
             env.reset()
             c = -1
@@ -284,4 +352,6 @@ if __name__ == "__main__":
             c -= 1
         obs, reward, done, term, info = env.step(display=True, sounds=True, debug=False)
         if done:
+            print("game over")
             c = 5*30
+        

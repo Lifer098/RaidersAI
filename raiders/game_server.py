@@ -51,7 +51,7 @@ class GameServer:
 
         # network
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.sock.settimeout(1.0)
+        self.sock.settimeout(4.0)
         self.sock.bind((host, port))
         self.sock.listen()
 
@@ -72,6 +72,7 @@ class GameServer:
                 print(f"[server] connection from {addr}")
                 # For registration: expect a register message first
                 reg = recv_msg(conn)
+                print(f"[server] registering from {addr}")
                 if not reg or not isinstance(reg, dict) or reg.get("type") != "register":
                     print("[server] invalid or no registration; closing connection")
                     conn.close()
@@ -291,6 +292,7 @@ class GameServer:
                             player_id = self.env.addAgent(team=team)
                         print(f"[server] created player {player_id} for team '{team}'")
                         send_msg(conn, {"type": "register_ack", "player_id": player_id, "team": team})
+                        print(f"[server] sending registering packet to player {player_id}")
 
                         # set up connection bookkeeping
                         self.clients[conn] = {'player_id': player_id, 'addr': conn.getpeername(), 'team': team}
@@ -298,6 +300,7 @@ class GameServer:
                         t = threading.Thread(target=self.client_recv_loop, args=(conn,), daemon=True)
                         t.start()
                         self.clients[conn]['thread'] = t
+                        print(f"[server] set up connection for player {player_id}")
                     while self.pending_remove_players:
                         pid = self.pending_remove_players.pop()
                         with self.env_lock:
@@ -367,8 +370,10 @@ if __name__ == "__main__":
     # For now, we pass an empty agent_scripts list so server still runs and uses only player actions and default agents.
     myip = "127.0.0.1"
     agent_scripts = [
-        (env_utils.AgentScripts.MatthewAgent(), 5, "defender"),
-        (env_utils.AgentScripts.BasicAgent(), 10, "raider")
+        #(env_utils.AgentScripts.BasicAgent(), 3, "defender"),
+        (env_utils.AgentScripts.StealthCatAgent(), 5, "defender"),
+        (env_utils.AgentScripts.BasicAgent(), 8, "raider"),
+        (env_utils.AgentScripts.StealthCatAgent(), 2, "raider"),
     ]
     server = GameServer(host=myip, port=9999)
     server.env.loadAgentScripts(agent_scripts)

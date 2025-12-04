@@ -2,6 +2,7 @@ import pygame
 import numpy as np
 import math
 import os
+import raiders
 
 pygame.init()
 pygame.display.set_mode((1, 1))  # Minimal dummy window
