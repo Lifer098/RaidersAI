@@ -442,6 +442,7 @@ class Actives(IntEnum):
     TURRET = 8
     HEAL = 9
     SCATTERSHOT = 10
+    BIGTURRET = 11
 
 
 class Player():
@@ -454,6 +455,7 @@ class Player():
             "spike": (12, 12),
             "turret": (90, 70),
             "scattershot": (40, 30),
+            "bigturret": (200, 160),
             "heal": 15,
         })
 
@@ -614,7 +616,7 @@ class Player():
                             self.changeStone(-self.costs.spike[1])
                 case Actives.TURRET:
                     if self.wood >= self.costs.turret[0] and self.stone >= self.costs.turret[1]:
-                        valid = self.place(BaseTurret(self.env, (-1, -1), self.angle, self.team, self))
+                        valid = self.place(Turret(self.env, (-1, -1), self.angle, self.team, self))
                         if valid:
                             self.changeWood(-self.costs.turret[0])
                             self.changeStone(-self.costs.turret[1])
@@ -624,6 +626,12 @@ class Player():
                         if valid:
                             self.changeWood(-self.costs.scattershot[0])
                             self.changeStone(-self.costs.scattershot[1])
+                case Actives.BIGTURRET:
+                    if self.wood >= self.costs.bigturret[0] and self.stone >= self.costs.bigturret[1]:
+                        valid = self.place(BigTurret(self.env, (-1, -1), self.angle, self.team, self))
+                        if valid:
+                            self.changeWood(-self.costs.bigturret[0])
+                            self.changeStone(-self.costs.bigturret[1])
                 case Actives.HEAL:
                     if self.food >= self.costs.heal:
                         self.place(Heal(self.env, (-1, -1), self))
@@ -675,7 +683,7 @@ class Player():
                 if isinstance(obj, Player) and obj.team == self.team:
                     continue
                 if obj not in self.hit_objects and \
-                   (isinstance(obj, StaticObject) or (type(obj) in (Turret, Scattershot)) or (type(obj) in {Player, Base} and obj.team != self.team)) and \
+                   (isinstance(obj, StaticObject) or (type(obj) in (Turret, Scattershot, BigTurret)) or (type(obj) in {Player, Base} and obj.team != self.team)) and \
                    (math.dist(obj.pos, p1) <= obj.size + self.attack_size or \
                    math.dist(obj.pos, p2) <= obj.size + self.attack_size or \
                    math.dist(obj.pos, p3) <= obj.size + self.attack_size):
@@ -765,9 +773,9 @@ class Player():
         if not place:
             return False
 
-        if type(obj) in {WoodWall, StoneWall, Turret, Scattershot, Spike}:
+        if type(obj) in {WoodWall, StoneWall, Turret, Scattershot, BigTurret, Spike}:
             for obj2 in self.objects + self.env.dynamic_objects:
-                if type(obj2) not in self.env.resources | self.env.walls | {Turret, Scattershot}:
+                if type(obj2) not in self.env.resources | self.env.walls | {Turret, Scattershot, BigTurret}:
                     continue
                 if math.dist(obj.pos, obj2.pos) <= obj.size + obj2.size - 0.5:
                     return False
@@ -800,7 +808,7 @@ class Player():
         for obj in self.objects + self.env.dynamic_objects:
             if obj is self:
                 continue
-            if type(obj) not in {Player, Turret, Scattershot} | self.env.resources | self.env.walls:
+            if type(obj) not in {Player, Turret, Scattershot, BigTurret} | self.env.resources | self.env.walls:
                 continue
             if (d:=math.dist(obj.pos, self.pos)) <= obj.size + self.size - 0.5:
                 d = max(0.1, d)
@@ -906,11 +914,15 @@ class Player():
                 self.place(obj, place=False)
                 obj.display()
             case 8:
-                obj = BaseTurret(self.env, (-1, -1), self.angle, self.team, self)
+                obj = Turret(self.env, (-1, -1), self.angle, self.team, self)
                 self.place(obj, place=False)
                 obj.display(place=True)
             case 10:
                 obj = Scattershot(self.env, (-1, -1), self.angle, self.team, self)
+                self.place(obj, place=False)
+                obj.display(place=True)
+            case 11:
+                obj = BigTurret(self.env, (-1, -1), self.angle, self.team, self)
                 self.place(obj, place=False)
                 obj.display(place=True)
             case 9:
@@ -1071,7 +1083,7 @@ class Projectile():
     
     def step(self):
         subframes = self.subframes
-        if self.lifetime == 0:
+        if self.lifetime <= 0:
             self.env.removeDynamicObject(self)
             return
         self.lifetime -= 1
@@ -1085,7 +1097,7 @@ class Projectile():
                 self.env.removeDynamicObject(self)
                 return
             for obj in self.objects:
-                if ((isinstance(obj, StaticObject) and (type(obj) not in (Base, StoneWall, Spike))) or (type(obj) in {Player, Turret, Scattershot, Base, Spike, StoneWall} and obj.team != self.team)) \
+                if ((isinstance(obj, StaticObject) and (type(obj) not in (Base, StoneWall, Spike))) or (type(obj) in {Player, Turret, Scattershot, BigTurret, Base, Spike, StoneWall} and obj.team != self.team)) \
                     and math.dist(obj.pos, self.pos) <= obj.size + self.size - 0.5:
                     if isinstance(obj, Spike):
                         continue
@@ -1227,7 +1239,7 @@ class Frag():
                 return
             self.pos = (self.pos[0]+dx, self.pos[1]+dy)
             for obj in self.objects:
-                if ((isinstance(obj, StaticObject) and type(obj) not in {Base, StoneWall, Spike, Turret, Scattershot}) or (type(obj) not in {Player} and obj.team != self.team)) \
+                if ((isinstance(obj, StaticObject) and type(obj) not in {Base, StoneWall, Spike, Turret, Scattershot, BigTurret}) or (type(obj) not in {Player} and obj.team != self.team)) \
                     and math.dist(obj.pos, self.pos) <= obj.size + self.size - 0.5:
                     if isinstance(obj, Projectile):
                         continue
@@ -1273,7 +1285,7 @@ class Explosion():
         self.objects = self.env.grid.getNearbyObjects(self.pos) + self.env.dynamic_objects
         for obj in self.objects:
             if (math.dist(obj.pos, self.pos) <= obj.size + self.size - 0.5):
-                if type(obj) in {Player, Turret, Scattershot, Spike, Base}:
+                if type(obj) in {Player, Turret, Scattershot, BigTurret, Spike, Base}:
                     obj.recieveHit(self, self.damage, self.player)
                 elif type(obj) in self.env.resources:
                     obj.recieveHit(self, self.damage*2, self.player)
@@ -1448,7 +1460,7 @@ class BigBullet(Frag):
                 return
             self.pos = (self.pos[0]+dx, self.pos[1]+dy)
             for obj in self.objects:
-                if ((isinstance(obj, StaticObject) and type(obj) not in {Base, StoneWall, Spike, Turret, Scattershot}) or (type(obj) not in {Player, Frag} and obj.team != self.team)) \
+                if ((isinstance(obj, StaticObject) and type(obj) not in {Base, StoneWall, Spike, Turret, Scattershot, BigTurret}) or (type(obj) not in {Player, Frag} and obj.team != self.team)) \
                     and math.dist(obj.pos, self.pos) <= obj.size + self.size - 0.5:
                     if isinstance(obj, Projectile):
                         continue
@@ -1494,7 +1506,7 @@ class BigExplosion(Explosion):
         self.objects = self.env.grid.getNearbyObjects(self.pos) + self.env.dynamic_objects
         for obj in self.objects:
             if (math.dist(obj.pos, self.pos) <= obj.size + self.size - 0.5):
-                if type(obj) in {Player, Turret, Scattershot, Spike, Base}:
+                if type(obj) in {Player, Turret, Scattershot, BigTurret, Spike, Base}:
                     obj.recieveHit(self, self.damage, self.player)
                 elif type(obj) in self.env.resources:
                     obj.recieveHit(self, self.damage*2, self.player)
@@ -1514,15 +1526,15 @@ class BigExplosion(Explosion):
             "size": self.size,
         })
 
-class BaseTurret(Turret):
+class BigTurret(Turret):
     def __init__(self, env, pos, angle, team, player):
         super().__init__(env, pos, angle, team, player)
 
-        self.health = 20
+        self.health = 120
         self.damage = 5
         self.reload_speed = 40
         self.attack_tick = 30
-        self.range = 300
+        self.range = 900
         self.size = 35
 
         self.hit = False
@@ -1548,8 +1560,16 @@ class BaseTurret(Turret):
     def attack(self):
         dx, dy = 20*math.cos(self.angle), 20*math.sin(self.angle)
         da = 4/180*math.pi
-        obj = BigBullet(self.env, self.pos, self.angle, self.team, self.env.dummy_player)
-        self.env.addDynamicObject(obj)
+        for i in range(9):
+            angle = self.angle + 6/180*math.pi*(i-4)
+            dx, dy = 20*math.cos(angle), 20*math.sin(angle)
+            if i == 4:
+                obj = Bullet(self.env, np.add(self.pos, (dx, dy)), angle, self.team, self.player, damage=4, speed=19.5, size=15, range=self.range)
+            else:
+                obj = Bullet(self.env, np.add(self.pos, (dx, dy)), angle, self.team, self.player, damage=2, speed=20-1*abs(i-4), size=10, range=self.range)
+            self.env.addDynamicObject(obj)
+        #obj = BigBullet(self.env, self.pos, self.angle, self.team, self.env.dummy_player)
+        #self.env.addDynamicObject(obj)
         self.attack_tick = self.reload_speed
         self.env.addSound("turretfire", self.pos, 0.4)
 
@@ -2339,7 +2359,7 @@ class RaiderEnvironment():
         return observations, info
     
     def initializePlayer(self, player, team):
-        player.food, player.wood, player.stone = (50, 120, 120) if team==1 else (80, 90, 80)
+        player.food, player.wood, player.stone = (50, 120, 120) if team==1 else (80, 60, 60)
         self.setSpawnLoc(self.map_size[0] * [0.12, 0.4][team-1], player)
     
     def getTeamCounts(self):
@@ -2353,7 +2373,7 @@ class RaiderEnvironment():
     def addSound(self, sound, pos, scale):
         self.sounds.append((SoundUtils.encodeSoundID(sound), *pos, scale))
 
-    def addDeposits(self, bushes=(140,6), trees=(200,8), stones=(80,4)):        
+    def addDeposits(self, bushes=(160,20), trees=(200,20), stones=(80,12)):        
         for _ in range(stones[0]):
             x, y = self.getSpawnLoc()
             self.addObject(Stone(self, (x,y)))
@@ -2367,15 +2387,15 @@ class RaiderEnvironment():
             self.addObject(Tree(self, (x,y)))
 
         for _ in range(stones[1]):
-            x, y = self.getSpawnLoc2(200)
+            x, y = self.getSpawnLoc2(400)
             self.addObject(Stone(self, (x,y)))
 
         for _ in range(bushes[1]):
-            x, y = self.getSpawnLoc2(200)
+            x, y = self.getSpawnLoc2(400)
             self.addObject(Bush(self, (x,y)))
             
         for _ in range(trees[1]):
-            x, y = self.getSpawnLoc2(200)
+            x, y = self.getSpawnLoc2(400)
             self.addObject(Tree(self, (x,y)))
 
     def setSpawnLoc(self, r, obj=None):

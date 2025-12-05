@@ -237,8 +237,8 @@ class RaiderEnvironmentWrapper():
             
             choices = []
             match active:
-                case Actives.TURRET | Actives.SCATTERSHOT:
-                    choices = [Actives.TURRET, Actives.SCATTERSHOT]
+                case Actives.TURRET | Actives.SCATTERSHOT | Actives.BIGTURRET:
+                    choices = [Actives.TURRET, Actives.SCATTERSHOT, Actives.BIGTURRET]
             
             num_choices = len(choices)
             for i in range(num_choices-1, -1, -1):

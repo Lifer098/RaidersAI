@@ -5,8 +5,8 @@ import pygame
 
 agent_scripts = [
     (env_utils.AgentScripts.PlayerAgent(), 1, "raider"),
-    (env_utils.AgentScripts.BasicAgent2(), 5, "raider"),
-    (env_utils.AgentScripts.BasicAgent2(), 6, "defender")
+    (env_utils.AgentScripts.BasicAgent2(), 7, "raider"),
+    (env_utils.AgentScripts.BasicAgent2(), 8, "defender")
 ]
 
 env = env_utils.RaiderEnvironmentWrapper(mode="god")

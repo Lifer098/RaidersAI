@@ -44,11 +44,12 @@ class PlayerAgent(BaseAgent):
 
         active = self.observation.self.active
         match active:
-            case Actives.TURRET | Actives.SCATTERSHOT:
-                num_choices = 2
-                active_choice = [Actives.TURRET, Actives.SCATTERSHOT].index(active)
+            case Actives.TURRET | Actives.SCATTERSHOT | Actives.BIGTURRET:
+                choices = [Actives.TURRET, Actives.SCATTERSHOT, Actives.BIGTURRET]
+                num_choices = len(choices)
+                active_choice = choices.index(active)
                 active_choice = (active_choice + scroll) % num_choices
-                active = [Actives.TURRET, Actives.SCATTERSHOT][active_choice]
+                active = choices[active_choice]
 
         if keys[pygame.K_1]: active = 1
         if keys[pygame.K_2]: active = 2
