@@ -81,7 +81,7 @@ class StaticDisplays:
                 info = (4, obj.pos[0], obj.pos[1], 0, 0, 0, 0, 0, 0)
             case raiders.Explosion:
                 info = (5, obj.pos[0], obj.pos[1], 0, 0, 0, 0, 0, 0)
-            case raiders.Turret:
+            case raiders.Turret_:
                 info = (6, obj.pos[0], obj.pos[1], 0, obj.angle, obj.hit, *obj.color)
             case raiders.Bush:
                 info = (7, obj.pos[0], obj.pos[1], obj.health, 0, obj.hit, 0, 0, 0)

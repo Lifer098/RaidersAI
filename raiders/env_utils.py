@@ -186,7 +186,7 @@ class RaiderEnvironmentWrapper():
             self.display(self.hover_player, sounds, debug)
             #self.env.clock.tick(20)
             if self.speedup:
-                self.env.clock.tick(60)
+                self.env.clock.tick(600)
             else:    
                 self.env.clock.tick(20)
         else:

@@ -1,0 +1,148 @@
+team_colors:
+  raiders: [240, 140, 80]
+  defenders: [140, 190, 240]
+
+costs:
+  refund_amount: 0.3
+  arrow: [2, 0, 0]
+  frag: [0, 15, 0]
+  woodwall: [10, 0, 0]
+  stonewall: [0, 20, 0]
+  spike: [12, 12, 0]
+  turret: [90, 70, 0]
+  scattershot: [40, 30, 0]
+  bigturret: [200, 160, 0]
+  heal: [0, 0, 15]
+
+player:
+  size: 15
+  max_health: 40
+  
+  speed: 4
+  slow_speed: 2
+  slow_duration: 15
+  knockback_speed: 3
+  knockback_duration: 3
+
+  place_distance: 10
+
+  attack_size: 20
+  sword_damage: 5
+  sword_resource_damage: 2
+  sword_wall_damage: 3
+  axe_damage: 6
+  axe_resource_damage: 6
+  axe_wall_damage: 12
+
+  frames:
+    sword: [15, 10, 7]
+    bow: [25, 18, 17]
+    axe: [25, 17, 14]
+    frag: [12, 11, 10]
+
+  raider_start_amount: [80, 60, 60]
+  defender_start_amount: [50, 120, 120]
+
+heal:
+  size: 40
+  effect_speed: 5
+  effect_tick_initial: 0
+  lifetime: 80
+  
+  healing: 0.5
+  healing_initial: 3
+
+arrow:
+  size: 5
+  speed: 25
+  damage: 3
+  range: 800
+
+charged_arrow:
+  size: 5
+  speed: 45
+  damage: 3
+  range: 800
+
+frag:
+  size: 12
+  speed: 15
+  damage: 8
+  lifetime: 40
+
+  friction: 0.93
+  explosion_size: 80
+  explosion_lifetime: 1
+
+bullet:
+  damage_to_walls: 2
+
+turret:
+  size: 20
+  health: 25
+  damage: 5
+
+  range: 750
+  reload_speed: 50
+  reload_tick_initial: 30
+
+  bullet_speed: 20
+  bullet_size: 10
+
+bigturret:
+  size: 35
+  health: 120
+  damage: 2
+
+  range: 900
+  reload_speed: 40
+  reload_tick_initial: 30
+
+  bullet_speed: 20
+  bullet_speed_decrement: 1
+  bullet_size: 10
+  middle_bullet_speed: 19.5
+  middle_bullet_size: 15
+  middle_bullet_damage: 4
+
+scattershot:
+  size: 17
+  health: 20
+  damage: 1.5
+
+  range: 300
+  reload_speed: 40
+  reload_tick_initial: 30
+
+bush:
+  size: 20
+  health: 15
+
+tree:
+  size: 30
+  health: 20
+
+stone:
+  size: 40
+  health: 50
+
+woodwall:
+  size: 20
+  health: 25
+
+stonewall:
+  size: 30
+  health: 75
+
+spike:
+  size: 17
+  health: 30
+  damage: 3
+
+  effect_speed: 5
+
+base:
+  size: 40
+  health: 100
+
+  regen: 0.01
