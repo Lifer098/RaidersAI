@@ -5,7 +5,7 @@ import os
 pygame.mixer.init()
 pygame.mixer.set_num_channels(32)  # allow many sounds
 
-assets_folder = "assets/sounds"
+assets_folder = os.path.join(os.path.dirname(__file__), "assets/sounds")
 sound_files = [f for f in os.listdir(assets_folder) if f.endswith((".ogg"))]
 SOUNDS = {}
 SOUNDS_TO_IDX = {}

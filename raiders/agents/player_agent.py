@@ -6,7 +6,9 @@ from attrdict import AttrDict
 import math, time
 from enum import Enum
 
-from agents.base_agent import BaseAgent
+from raiders.agents.base_agent import BaseAgent
+from raiders.raiders import Actives
+from raiders import global_events
 
 class PlayerAgent(BaseAgent):
     def __init__(self):
@@ -32,7 +34,23 @@ class PlayerAgent(BaseAgent):
 
         keys = pygame.key.get_pressed()
 
-        active = 0
+        scroll = 0
+        for event in global_events.events:
+            if event.type == pygame.MOUSEWHEEL:
+                if event.y > 0:
+                    scroll = 1
+                elif event.y < 0:
+                    scroll = -1
+
+        active = self.observation.self.active
+        match active:
+            case Actives.TURRET | Actives.SCATTERSHOT | Actives.BIGTURRET:
+                choices = [Actives.TURRET, Actives.SCATTERSHOT, Actives.BIGTURRET]
+                num_choices = len(choices)
+                active_choice = choices.index(active)
+                active_choice = (active_choice + scroll) % num_choices
+                active = choices[active_choice]
+
         if keys[pygame.K_1]: active = 1
         if keys[pygame.K_2]: active = 2
         if keys[pygame.K_3]: active = 3
@@ -43,11 +61,13 @@ class PlayerAgent(BaseAgent):
         if keys[pygame.K_r]: active = 8
         if keys[pygame.K_e]: active = 9
 
+
+
         ax, ay = 1, 1
         if keys[pygame.K_a]: ax -= 1
         if keys[pygame.K_d]: ax += 1
-        if keys[pygame.K_s]: ay -= 1
-        if keys[pygame.K_w]: ay += 1
+        if keys[pygame.K_s]: ay += 1
+        if keys[pygame.K_w]: ay -= 1
 
         action = False
         if pygame.mouse.get_pressed()[0]:
@@ -56,7 +76,7 @@ class PlayerAgent(BaseAgent):
         mx, my = pygame.mouse.get_pos()
         cx, cy = self.screen_center
         dx, dy = mx-cx, my-cy
-        target_angle = -math.atan2(dy, dx)
+        target_angle = math.atan2(dy, dx)
 
         player_angle = self.observation.self.angle
         d_angle = (target_angle - player_angle) % (2*math.pi)
@@ -71,7 +91,13 @@ class PlayerAgent(BaseAgent):
             else: angle = -2
         angle = angle + 2
 
-        return (ax, ay, active, action, angle)
+        view_minimap = False
+        if keys[pygame.K_LSHIFT]: view_minimap = True
+
+        if active == self.observation.self.active:
+            active = 0
+
+        return (ax, ay, active, action, angle, view_minimap)
 
     def debug(self, surface, id_):
         pass

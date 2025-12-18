@@ -8,143 +8,134 @@ from attrdict import AttrDict
 import math, time
 from enum import Enum
 
-from raiders import RaiderEnvironment
-from sound_utils import SoundUtils
-from agents.base_agent import BaseAgent
-from agents.player_agent import PlayerAgent
+from raiders.env_utils import RaiderEnvironmentWrapper
 
-class RaiderEnvironmentWrapper():
-    def __init__(
-        self,
-        mode = "god"
-    ):
-        self.mode = mode
-        self.env = RaiderEnvironment()
+import numpy as np
+import cv2
+from gym import Env, spaces
 
-        self.food_img = pygame.image.load("assets/food.png")
-        self.wood_img = pygame.image.load("assets/wood.png")
-        self.stone_img = pygame.image.load("assets/stone.png")
-        self.font = pygame.font.Font(None, 30) 
-        self.font2 = pygame.font.Font(None, 25) 
+class RaiderRLEnv(Env):
+    def __init__(self, teams, agent_ids=None, resolution=(64, 64), shaped_reward=False, shuffle=True, frameskip=4, visible=False):
+        self.shuffle = shuffle
+        self.frameskip = frameskip
+        self.visible = visible
+        if not self.visible:
+            os.environ["SDL_VIDEODRIVER"] = "dummy"
 
-        self.scripts = []
-        self.active_ids = {}
-        self.hover_player = 1
-        self.camera_mode = mode
-        
-        self.t = time.time()
-        self.framerate = 0
-        self.speedup = False
+        self.teams = teams
+        self.resolution = resolution
+        self.shaped_reward = shaped_reward
 
+        if agent_ids is None:
+            self.ids = [id_ for id_ in range(sum(self.teams))]
+        else:
+            self.ids = agent_ids
+        self.n_agents = len(self.ids)
+
+        self.env = RaiderEnvironmentWrapper()
+        self.env.speedup = True
+        self.env.camera_mode = "hover_player"
+        for team, agents in zip(("defender", "raider"), teams):
+            for agent in range(agents):
+                self.env.addAgent(team)
         self.reset()
-
+    
     def reset(self):
-        self.actions = {id_: [1, 1, 0, 0, 2] for id_ in self.env.players.keys()}
-        observations, info = self.env.reset()
+        if self.shuffle:
+            random.shuffle(self.ids)
 
-        for script in self.scripts:
-            team = script.__team__
-            team_observation = info.team_observations[team]
-            script.handleTeamObservation(team_observation)
-        
-        for id_, script in self.active_ids.items():
-            if script is None: continue
-            action = script.getAction(observations[id_], id_)
-            self.actions[id_] = action
+        obs, info = self.env.reset()
+        if self.n_agents == 1:
+            self.last_obs = np.array(
+                cv2.resize(obs[self.ids[0]].image_obs, self.resolution, cv2.INTER_NEAREST),
+                dtype=np.float32
+            )
+        else:
+            self.last_obs = np.array(
+                [cv2.resize(obs[id_].image_obs, self.resolution, cv2.INTER_NEAREST) for id_ in self.ids],
+                dtype=np.float32
+            )
+        return self.last_obs, info
 
-    def step(self, display=False, sounds=False, debug=False):   
-        observations, rewards, terminated, truncated, info = self.env.step(self.actions)
+    def calculateReward(self, player_info, winning_team):
+        player_events = player_info.events
+        r = 0
 
-        for script in self.scripts:
-            team = script.__team__
-            team_observation = info.team_observations[team]
-            script.handleTeamObservation(team_observation)
+        #r += player_info.wood * 0.001
         
-        for id_, script in self.active_ids.items():
-            if script is None: continue
-            action = script.getAction(observations[id_], id_)
-            self.actions[id_] = action
-        
-        if self.mode == "god":
-            self.cameraControl()
+        if self.shaped_reward:
+            r += player_events.change_food * 0.001
+            r += player_events.change_wood * 0.00065
+            r += player_events.change_stone * 0.00065
+            r += player_events.change_health * 0.003
+            r += player_events.change_health_enemy_player * 0.0015
+            #r += player_events.damage_dealt_enemy_structure * 0.00005
+            #r += player_events.change_health_team_player * 0.001
+            #r += player_events.damage_dealt_team_structure * -0.00005
+            r += player_events.killed_enemy_player * 2
+            r += player_events.died * -5
+            r += player_events.self_damage_dealt_base * 0.01
+            r += player_events.damage_dealt_base * 0.002        
 
-        if display:
-            self.display(self.hover_player, sounds, debug)
-        
-        return observations, rewards, terminated, truncated, info
+        if winning_team is None: pass
+        elif ["defender", "raider"][player_info.team-1] == winning_team: r += 20
+        else: r -= 20
+
+        return r
     
-    def display(self, player_id, sounds, debug):
-        old_camera_scale = self.env.camera.scale
-        old_camera_center = self.env.camera.frame_rect.center
+    def step(self, actions, display=True):
+        if self.n_agents == 1:
+            self.env.actions[self.ids[0]] = actions
+        else:
+            for id_ in self.ids:
+                self.env.actions[id_] = actions[id_]
 
-        if not (self.mode == "god" and self.camera_mode == "god"):
-            self.env.camera.scale = 300
-            player_obj = self.env.players[player_id]
-            self.env.camera.frame_rect.center = player_obj.pos
-
-            if sounds:
-                self.playSounds(player_obj.pos, self.env.sounds)
-
-        if debug:
-            for id_, script in self.active_ids.items():
-                script.debug(self.env.surface, id_)
+        if self.n_agents == 1:
+            rewards = np.array(0, dtype=np.float32)
+        else:
+            rewards = np.zeros(self.n_agents, dtype=np.float32)
         
-        frame = self.env.camera.getFrame(self.env.surface)
-        frame = pygame.transform.flip(frame, False, True)
+        for i in range(self.frameskip-1):
+            obs, winning_team, terminated, truncated, info = \
+                self.env.step(display=display, debug=False)
+            rewards += np.array(
+                self.calculateReward(obs[self.ids[0]].self, winning_team),
+                dtype=np.float32
+            )
 
-        if not (self.mode == "god" and self.camera_mode == "god"):
-            for img, text, y in zip(
-                (self.food_img, self.wood_img, self.stone_img), 
-                (player_obj.food, player_obj.wood, player_obj.stone), 
-                (420, 470, 520)):
-                frame.blit(img, (15, y))
-                text_surf = self.font.render(str(int(text)), True, (255,255,255))
-                frame.blit(text_surf, (60, y+10))
-
-        pygame.transform.scale(frame, self.env.screen_size, self.env.screen)
-        t = self.env.t // 20
-        m, s = str(t // 60), ('00'+str(t % 60))[-2:]
-        text_surf = self.font2.render(f"{m}:{s}", True, (255,255,255))
-        text_rect = text_surf.get_rect(midright=(780, 40))
-        self.env.screen.blit(text_surf, text_rect)
-        text_surf = self.font2.render(str(self.framerate), True, (255,255,255))
-        text_rect = text_surf.get_rect(midright=(780, 20))
-        self.env.screen.blit(text_surf, text_rect)
-        pygame.display.flip()
-
-        self.framerate = int(1 / (time.time() - self.t))
-        if self.speedup:
-            self.env.clock.tick(60)
-        else:    
-            self.env.clock.tick(20)
-        self.t = time.time()
-
-        self.env.camera.scale = old_camera_scale
-        self.env.camera.frame_rect.center = old_camera_center
-    
-    def calculateReward(self, player_events):
-        '''
-        change_food
-        change_wood
-        change_stone
-        change_health
-        change_health_enemy_player
-        damage_dealt_enemy_structure
-        change_health_team_player
-        damage_dealt_team_structure
-        killed_enemy_player
-        died
-        self_damage_dealt_base
-        damage_dealt_base
-        '''
-
+        obs, winning_team, terminated, truncated, info = \
+            self.env.step(display=display, debug=False)
         
+        if self.n_agents == 1:
+            self.last_obs = np.array(
+                cv2.resize(obs[self.ids[0]].image_obs, self.resolution, cv2.INTER_NEAREST),
+                dtype=np.float32
+            )
+            rewards += np.array(
+                self.calculateReward(obs[self.ids[0]].self, winning_team),
+                dtype=np.float32
+            )
+        else:
+            self.last_obs = np.array(
+                [cv2.resize(obs[id_].image_obs, self.resolution, cv2.INTER_NEAREST) for id_ in self.ids],
+                dtype=np.float32
+            )
+            rewards += np.array(
+                [self.calculateReward(obs[id_].self, winning_team) for id_ in self.ids],
+                dtype=np.float32
+            )
+
+        done = terminated or truncated
+
+        return self.last_obs, rewards, done, False, info
+
+
 pygame.init()
 
 # example usage
 if __name__ == "__main__":
 
-    env = RaiderEnvironmentWrapper(mode="god")
+    env = RaiderRLEnv(teams=(5,5))
     env.reset()
     c = 0
     while True:
@@ -153,6 +144,6 @@ if __name__ == "__main__":
             c = -1
         elif c > 0:
             c -= 1
-        obs, reward, done, term, info = env.step(display=True, sounds=True, debug=False)
+        obs, reward, done, term, info = env.step(display=True)
         if done:
             c = 5*30
