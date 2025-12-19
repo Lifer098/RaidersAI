@@ -419,10 +419,13 @@ class RaiderEnvironment():
         self.grid.addObject(obj)
 
     def removeObject(self, obj):
+        if self.removeDynamicObject(obj):
+            return True
         if obj not in self.objects:
-            return
+            return False
         self.objects.remove(obj)
         self.grid.removeObject(obj)
+        return True
     
     def addDynamicObject(self, obj):
         obj.env = self
@@ -430,8 +433,9 @@ class RaiderEnvironment():
     
     def removeDynamicObject(self, obj):
         if obj not in self.dynamic_objects:
-            return
+            return False
         self.dynamic_objects.remove(obj)
+        return True
     
     def addEffect(self, obj):
         self.effects.append(obj)

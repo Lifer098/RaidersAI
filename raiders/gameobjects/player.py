@@ -312,15 +312,15 @@ class Player(Object):
                     if math.dist(obj.pos, obj2.pos) <= obj.size + obj2.size - 0.5:
                         return False
         
-        if isinstance(obj, GAMEOBJECTS["Wall"]):
-            self.env.addObject(obj)
+        if isinstance(obj, GAMEOBJECTS["Projectile"]):
+            self.env.addDynamicObject(obj)
         elif isinstance(obj, GAMEOBJECTS["Effect"]):
             dist = self.size + 1.4*obj.size
             dx, dy = dist*math.cos(self.angle), dist*math.sin(self.angle)
             obj.pos = np.add(self.pos, (0.5*dx,0.5*dy))
             self.env.addDynamicObject(obj)
         else:
-            self.env.addDynamicObject(obj)
+            self.env.addObject(obj)
             
         for cls in CONFIG["sounds"]:
             if isinstance(obj, GAMEOBJECTS[cls]):
