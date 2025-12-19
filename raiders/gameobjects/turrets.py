@@ -77,6 +77,10 @@ class Turret(Object):
         else:
             self.attack_tick -= 1
     
+    def recieveHitObject(self, obj, damage):
+        if isinstance(obj, GAMEOBJECTS["Bullet"]):
+            self.health = max(0, self.health-damage)
+
     def recieveHitUpdate(self, obj, damage):
         super().recieveHitUpdate(obj, damage)
         self.env.addSound("structurehit", self.pos, 0.6)
