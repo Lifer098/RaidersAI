@@ -157,7 +157,7 @@ class Player(Object):
                         self.active_attack = Actives.SWORD
                         self.startAttack(damage=5, frames=CONFIG["player"]["frames"]["sword"])
                 case Actives.BOW:
-                    cost = CONFIG["costs"]["Frag"]
+                    cost = CONFIG["costs"]["Arrow"]
                     if self.active_attack == -1 and self.haveEnoughResources(cost):
                         self.useResources(cost)
                         self.active_attack = Actives.BOW
@@ -320,6 +320,11 @@ class Player(Object):
             self.env.addDynamicObject(obj)
         else:
             self.env.addDynamicObject(obj)
+            
+        for cls in CONFIG["sounds"]:
+            if isinstance(obj, GAMEOBJECTS[cls]):
+                self.env.addSound(CONFIG["sounds"][cls], obj.pos, 0.4)
+
 
         return True
 

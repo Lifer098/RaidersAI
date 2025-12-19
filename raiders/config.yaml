@@ -14,6 +14,12 @@ costs:
   BigTurret: [200, 160, 0]
   Heal: [0, 0, 15]
 
+sounds:
+  WoodWall: woodplace
+  StoneWall: stoneplace
+  Spike: turretplace
+  Turret: turretplace
+
 player:
   size: 15
   max_health: 40

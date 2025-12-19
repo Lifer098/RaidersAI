@@ -17,7 +17,7 @@ from raiders.gameobjects.gameobject import GameObject
 class Projectile(GameObject):
     display_layer = DisplayLayers.PLAYER_TOP_ELEMENT
 
-    subframes = 8
+    subframes = 12
 
     transparent_objects = ("Base",)
     friendly_objects = ("Spike", "StoneWall", "Player", "Turret")
@@ -138,7 +138,7 @@ class ChargedArrow(Arrow):
     size = 5
     range = 800
 
-    subframes = 20
+    subframes = 24
 
     arrow_sprite = load_asset("arrow.png")
     sprite_cache = {}

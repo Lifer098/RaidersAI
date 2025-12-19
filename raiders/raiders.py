@@ -231,7 +231,7 @@ class Camera():
         self.frame_rect.center = center
 
         frame = pygame.Surface(self.frame_rect.size)
-        frame.fill((self.env.colors.grey))
+        frame.fill((80, 80, 80))
         
         world_rect = surface.get_rect()
         overlap = self.frame_rect.clip(world_rect)
@@ -247,22 +247,10 @@ class Camera():
 
 class RaiderEnvironment():
     def __init__(self):
-        self.colors = AttrDict({
-            "white": (255, 255, 255),
-            "black": (0, 0, 0),
-            "orange": (170, 120, 55),
-            "brown": (120, 80, 60),
-            "lightbrown": (210, 170, 130),
-            "green": (100, 170, 70),
-            "darkgreen": (92, 135, 52),
-            "grey": (70, 70, 70),
-            "lightgrey": (130, 130, 130),
-            "lightergrey": (180, 180, 180),
-            "mutedred": (180, 120, 90),
-            "mutedlightred": (190, 145, 100),
-            "team2": (240, 140, 80),
-            "team1": (140, 190, 240),
-        })
+        self.font = pygame.font.Font(None, 30) 
+        self.font2 = pygame.font.Font(None, 40) 
+        self.font3 = pygame.font.SysFont("Consolas", 10) 
+        self.font4 = pygame.font.SysFont("Consolas", 7)
 
         self.resources = {Bush, Tree, Stone}
         self.walls = {WoodWall, StoneWall, Spike}
@@ -292,7 +280,6 @@ class RaiderEnvironment():
         self.t = 0
 
         self.metadata = AttrDict({
-            "colors": self.colors,
             "map_size": self.map_size,
             "center": self.center,
             "screen_size": self.screen_size,
@@ -300,14 +287,6 @@ class RaiderEnvironment():
             "time": self.t,
             "storm_size": self.max_storm_size,
         })
-        
-        initialized = False
-        while not initialized:
-            try:
-                self.initializeSprites()
-                initialized = True
-            except:
-                time.sleep(random.randint(1,5))
 
         self.players = {}
         self.reset()
@@ -329,74 +308,6 @@ class RaiderEnvironment():
         if player in self.dynamic_objects:
             self.dynamic_objects.remove(player)
         del self.players[id_]
-
-    def prerender_rotations(self, names=("sword","bow","axe"), step=1, cutoff=250):
-        def _binarize_alpha(surf, cutoff):
-            s = surf.convert_alpha()
-            a = pygame.surfarray.pixels_alpha(s)
-            a[:] = (a >= cutoff) * 255
-            del a
-            return s
-        
-        # step=1 → 360 frames; use step=2/3 to save memory
-        for name in names:
-            base = self.sprites[name]  # assumes already loaded
-            for deg in range(0, 64):
-                deg *= 5.625
-                rot = pygame.transform.rotate(base, deg)
-                rot = _binarize_alpha(rot, cutoff=cutoff)
-                # store: ('sword','rot',deg) etc.
-                opaque = rot.convert()
-                opaque.set_colorkey((0, 0, 0))
-                self.sprites[(name, deg, False)] = opaque
-                opaque = rot.convert()
-                opaque.set_colorkey((0, 0, 0))
-                self.fill_visible_pixels(opaque)
-                self.sprites[(name, deg, True)] = opaque
-
-    def initializeSprites(self):
-        self.font = pygame.font.Font(None, 30) 
-        self.font2 = pygame.font.Font(None, 40) 
-        self.font3 = pygame.font.SysFont("Consolas", 10) 
-        self.font4 = pygame.font.SysFont("Consolas", 7)
-        self.sprites = AttrDict({
-            "raider": loadAsset("raider.png"),
-            "defender": loadAsset("defender.png"),
-            "sword": loadAsset("sword.png").convert_alpha(),
-            "bow": loadAsset("bow.png").convert_alpha(),
-            "axe": loadAsset("axe.png").convert_alpha(),
-            "arrow": loadAsset("arrow.png").convert_alpha(),
-            "food_icon": loadAsset("food.png").convert_alpha(),
-            "wood_icon": loadAsset("wood.png").convert_alpha(),
-            "stone_icon": loadAsset("stone.png").convert_alpha(),
-        })
-        self.sprites["food_icon_scaled"] = pygame.transform.scale(self.sprites.food_icon, (9,9))
-        self.sprites["wood_icon_scaled"] = pygame.transform.scale(self.sprites.wood_icon, (9,9))
-        self.sprites["stone_icon_scaled"] = pygame.transform.scale(self.sprites.stone_icon, (9,9))
-        
-        self.prerender_rotations()
-
-    def fill_visible_pixels(self, surface, fill_color=(255, 255, 255)):
-        colorkey = surface.get_colorkey()
-        if colorkey is None:
-            raise ValueError("Surface must have a colorkey set")
-
-        surface.lock()
-        width, height = surface.get_size()
-
-        for x in range(width):
-            for y in range(height):
-                if surface.get_at((x, y))[:3] != colorkey[:3]:
-                    surface.set_at((x, y), fill_color)
-        surface.unlock()
-    
-    def drawSprite(self, sprite, pos, health, hit):
-        if health == -1:
-            sprite_surface = self.sprites[(sprite, hit)]
-        else:
-            sprite_surface = self.sprites[(sprite, health, hit)]
-        rect = sprite_surface.get_rect(center=pos)
-        self.surface.blit(sprite_surface, rect)
 
     def reset(self):
         self.storm_surface.fill((0,0,0,0))
@@ -502,6 +413,7 @@ class RaiderEnvironment():
         return x, y
 
     def addObject(self, obj):
+        obj.env = self
         self.objects.append(obj)
         self.grid.addObject(obj)
 
@@ -512,6 +424,7 @@ class RaiderEnvironment():
         self.grid.removeObject(obj)
     
     def addDynamicObject(self, obj):
+        obj.env = self
         self.dynamic_objects.append(obj)
     
     def removeDynamicObject(self, obj):
@@ -572,7 +485,7 @@ class RaiderEnvironment():
 
 
         pygame.event.pump()
-        self.surface.fill(self.colors.green)
+        self.surface.fill((100, 170, 70))
         self.minimap_surface.fill((35, 35, 35, 50))
 
         for obj in self.effects:
@@ -606,7 +519,7 @@ class RaiderEnvironment():
             if player.health <= 0:
                 continue
             bar_width = 40
-            health_ratio = player.health / 20
+            health_ratio = player.health / 25
             pygame.draw.rect(self.surface, (40,40,40), (player.pos[0]-bar_width/2, player.pos[1]+20, bar_width, 6))
             pygame.draw.rect(self.surface, (140,210,100), (player.pos[0]-(bar_width-3)/2, player.pos[1]+21, (bar_width-3)*min(1, health_ratio), 3))
             if health_ratio > 1:
