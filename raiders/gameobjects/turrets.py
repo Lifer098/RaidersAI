@@ -18,6 +18,8 @@ class Turret(Object):
     display_layer = DisplayLayers.PLAYER_BOTTOM_ELEMENT
     minimap_info = MinimapInfo(color=None, r=4)
 
+    incr = math.radians(10)
+
     sprite_cache = {}
 
     max_size = 20
@@ -158,7 +160,7 @@ class Turret(Object):
             type = self.__class__.__name__,
             team = self.team,
             position = self.pos,
-            angle = self.angle,
+            angle = round(self.angle / self.incr) * self.incr,
             size = self.size,
             health = self.health,
             hit = self.hit,

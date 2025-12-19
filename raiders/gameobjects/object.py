@@ -15,6 +15,8 @@ from raiders.gameobjects._gameobject_utils import (
 from raiders.gameobjects.gameobject import GameObject
 
 class Object(GameObject):
+    incr = math.radians(15)
+
     shake_scale = 0
     move_scale = 0
 
@@ -79,7 +81,7 @@ class Object(GameObject):
         return ObjectInfo(
             type = self.__class__.__name__,
             position = self.pos,
-            angle = self.angle,
+            angle = round(self.angle / self.incr) * self.incr,
             size = self.size,
             health = self.health,
             hit = self.hit,

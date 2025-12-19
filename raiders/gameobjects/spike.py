@@ -90,7 +90,7 @@ class Spike(Object):
             type = self.__class__.__name__,
             team = self.team,
             position = self.pos,
-            angle = self.angle,
+            angle = round(self.angle / self.incr) * self.incr,
             size = self.size,
             health = self.health,
             hit = self.hit,
