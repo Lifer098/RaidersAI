@@ -53,7 +53,7 @@ class ObservationView:
             return self._get_for_cls(cls)
         
         for cls in GAMEOBJECTS.keys():
-            if cls.lower() == name:
+            if cls.lower() == name.lower():
                 return self._get_for_cls(cls)
         
         raise AttributeError(name)

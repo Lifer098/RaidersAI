@@ -1,10 +1,14 @@
 import random
+import numpy as np
+import pygame
 
 from raiders.gameobjects._gameobject_registry import GAMEOBJECTS
 from raiders.gameobjects._gameobject_utils import DisplayLayers
+from raiders.gameobjects._gameobject_info import MinimapInfo
 
 class GameObject:
     display_layer = DisplayLayers.DEFAULT
+    minimap_info = None
 
     def __init__(self):
         self.shake = 0
@@ -19,6 +23,13 @@ class GameObject:
     def step(self):
         self.shake = max(0, self.shake * 0.8 - 1)
         self.offset = self.offset[0] * 0.8, self.offset[1] * 0.8
+
+    @classmethod
+    def displayOnMinimap(cls, surface, info, scale):
+        if cls.minimap_info is not None:
+            color, r = cls.minimap_info.color, cls.minimap_info.r
+            pos = np.multiply(info.position, scale)
+            pygame.draw.circle(surface, color, pos, r)
 
     @classmethod
     def display(cls, surface, info, pos=None):

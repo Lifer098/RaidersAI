@@ -20,6 +20,14 @@ infos = [
     ("offset", (0,0)),
     ("relative_position", None),
 ]
+
+ObjectInfo = namedtuple("ObjectInfo", 
+    [info[0] for info in infos]
+)
+ObjectInfo.__new__.__defaults__ = tuple(
+    info[1] for info in infos
+)
+
 player_infos = [
     ("id_", None),
     ("food", None),
@@ -30,16 +38,21 @@ player_infos = [
     ("kills", None),
 ]
 
-ObjectInfo = namedtuple("ObjectInfo", 
-    [info[0] for info in infos]
-)
-ObjectInfo.__new__.__defaults__ = tuple(
-    info[1] for info in infos
-)
-
 PlayerInfo = namedtuple("PlayerInfo", 
     [info[0] for info in infos+player_infos]
 )
 PlayerInfo.__new__.__defaults__ = tuple(
     info[1] for info in infos+player_infos
+)
+
+minimap_infos = [
+    ("color", None),
+    ("r", 4),
+]
+
+MinimapInfo = namedtuple("MinimapInfo", 
+    [info[0] for info in minimap_infos]
+)
+MinimapInfo.__new__.__defaults__ = tuple(
+    info[1] for info in minimap_infos
 )

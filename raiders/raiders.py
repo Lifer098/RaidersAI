@@ -274,6 +274,7 @@ class RaiderEnvironment():
         self.raider_mask_surface = pygame.Surface((300,300), pygame.SRCALPHA)
         self.storm_surface = pygame.Surface(self.map_size)
         self.background_surface = pygame.Surface(self.map_size, pygame.SRCALPHA)
+        self.surface_to_minimap_scale = self.minimap_surface.get_width() / self.surface.get_width()
         
         self.screen = pygame.display.set_mode(self.screen_size)
         self.clock = pygame.time.Clock()
@@ -492,23 +493,28 @@ class RaiderEnvironment():
             obj.display(self.surface, obj.getInfo())
         
         self.base.display(self.surface, self.base.getInfo())
+        self.base.displayOnMinimap(self.minimap_surface, self.base.getInfo(), self.surface_to_minimap_scale)
 
         for obj in self.objects:
             if isinstance(obj, Tree):
                 continue
             obj.display(self.surface, obj.getInfo())
+            obj.displayOnMinimap(self.minimap_surface, obj.getInfo(), self.surface_to_minimap_scale)
         for obj in self.dynamic_objects:
             if isinstance(obj, Player) or isinstance(obj, Base):
                 continue
             obj.display(self.surface, obj.getInfo()) 
+            obj.displayOnMinimap(self.minimap_surface, obj.getInfo(), self.surface_to_minimap_scale)
         for obj in self.getPlayers():
             if obj.health <= 0: 
                 continue
             obj.display(self.surface, obj.getInfo())
+            obj.displayOnMinimap(self.minimap_surface, obj.getInfo(), self.surface_to_minimap_scale)
         for obj in self.objects:
             if not isinstance(obj, Tree):
                 continue
             obj.display(self.surface, obj.getInfo())
+            obj.displayOnMinimap(self.minimap_surface, obj.getInfo(), self.surface_to_minimap_scale)
         
         if self.storm_size != self.max_storm_size:
             if self.storm_size != self.min_storm_size:

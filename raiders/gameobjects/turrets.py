@@ -3,7 +3,7 @@ import numpy as np
 import pygame
 
 from raiders.gameobjects._gameobject_registry import GAMEOBJECTS
-from raiders.gameobjects._gameobject_info import ObjectInfo, CONFIG
+from raiders.gameobjects._gameobject_info import MinimapInfo, ObjectInfo, CONFIG
 from raiders.gameobjects._gameobject_utils import (
     darken, 
     polygon, 
@@ -16,6 +16,7 @@ from raiders.gameobjects.object import Object
 
 class Turret(Object):
     display_layer = DisplayLayers.PLAYER_BOTTOM_ELEMENT
+    minimap_info = MinimapInfo(color=None, r=4)
 
     sprite_cache = {}
 
@@ -93,6 +94,13 @@ class Turret(Object):
         self.env.addDynamicObject(obj)
         self.attack_tick = self.max_attack_tick
         self.env.addSound("turretfire", self.pos, 0.4)
+
+    @classmethod
+    def displayOnMinimap(cls, surface, info, scale):
+        if cls.minimap_info is not None:
+            color, r = CONFIG["team_colors"]["defenders" if info.team==1 else "raiders"] + [170,], cls.minimap_info.r
+            pos = np.multiply(info.position, scale)
+            pygame.draw.circle(surface, color, pos, r)
 
     @staticmethod
     def render(info):

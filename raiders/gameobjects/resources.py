@@ -2,7 +2,7 @@ import pygame
 import math
 import random
 
-from raiders.gameobjects._gameobject_info import ObjectInfo, CONFIG
+from raiders.gameobjects._gameobject_info import MinimapInfo, ObjectInfo, CONFIG
 from raiders.gameobjects._gameobject_registry import GAMEOBJECTS
 from raiders.gameobjects._gameobject_utils import (
     DisplayLayers,
@@ -25,6 +25,8 @@ class Resource(Object):
 
 
 class Bush(Resource):
+    minimap_info = MinimapInfo(color=(200, 40, 60, 100), r=4)
+
     sprite_cache = {}
     max_size = 20
     max_health = 15
@@ -35,8 +37,6 @@ class Bush(Resource):
     green = (100, 170, 70)
     darkgreen = (92, 135, 52)
     mutedred = (180, 120, 90)
-    minimap_color = (200, 40, 60)
-    minimap_opacity = 120
 
     def __init__(self, env, pos):
         super().__init__(env, pos=pos, max_size=Bush.max_size, max_health=Bush.max_health)
@@ -82,6 +82,7 @@ class Bush(Resource):
 
 class Tree(Resource):
     display_layer = DisplayLayers.TOP_RESOURCE
+    minimap_info = MinimapInfo(color=(50, 190, 40, 100), r=4)
 
     sprite_cache = {}
     max_size = 30
@@ -92,8 +93,6 @@ class Tree(Resource):
 
     green = (100, 170, 70)
     darkgreen = (92, 135, 52)
-    minimap_color = (50, 190, 40)
-    minimap_opacity = 100
 
     def __init__(self, env, pos):
         super().__init__(env, pos=pos, max_size=Tree.max_size, max_health=Tree.max_health)
@@ -141,6 +140,8 @@ class Tree(Resource):
     
 
 class Stone(Resource):
+    minimap_info = MinimapInfo(color=(160, 160, 160, 100), r=4)
+
     sprite_cache = {}
     max_size = 40
     max_health = 50
@@ -150,8 +151,6 @@ class Stone(Resource):
 
     lightgrey = (130, 130, 130)
     lightergrey = (180, 180, 180)
-    minimap_color = (160, 160, 160)
-    minimap_opacity = 200
 
     def __init__(self, env, pos):
         super().__init__(env, pos=pos, max_size=self.max_size, max_health=self.max_health)

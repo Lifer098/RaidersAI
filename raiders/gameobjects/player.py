@@ -4,7 +4,7 @@ from enum import IntEnum
 
 import pygame
 
-from raiders.gameobjects._gameobject_info import PlayerInfo, CONFIG
+from raiders.gameobjects._gameobject_info import MinimapInfo, PlayerInfo, CONFIG
 from raiders.gameobjects._gameobject_registry import GAMEOBJECTS
 from raiders.gameobjects._gameobject_utils import (
     DisplayLayers,
@@ -45,6 +45,7 @@ def round_to_5625(x):
 
 class Player(Object):
     display_layer = DisplayLayers.PLAYER
+    minimap_info = MinimapInfo(color=None, r=6)
 
     sprite_cache = {}
 
@@ -354,6 +355,13 @@ class Player(Object):
         if self.pos[1] > self.env.map_size[1] - buffer - 1:
             dy -= 5
         self.pos = (self.pos[0]+dx, self.pos[1]+dy)
+
+    @classmethod
+    def displayOnMinimap(cls, surface, info, scale):
+        if cls.minimap_info is not None:
+            color, r = CONFIG["team_colors"]["defenders" if info.team==1 else "raiders"] + [200,], cls.minimap_info.r
+            pos = np.multiply(info.position, scale)
+            pygame.draw.circle(surface, color, pos, r)
 
     @staticmethod
     def render(info):
