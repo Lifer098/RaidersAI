@@ -19,8 +19,8 @@ class Projectile(GameObject):
 
     subframes = 12
 
-    transparent_objects = ("Base",)
-    friendly_objects = ("Spike", "StoneWall", "Player", "Turret")
+    transparent_objects = ("Base", "Spike")
+    friendly_objects = ("StoneWall", "Player", "Turret")
 
     def __init__(self, env, pos, angle, team, player, damage, speed, range, size):
         self.env = env
@@ -211,6 +211,9 @@ class Frag(Projectile):
     friction = 0.93
     size = 12
     lifetime = 40
+
+    transparent_objects = ("Base", )
+    friendly_objects = ("Spike", "StoneWall", "Player", "Turret")
 
     shake_scale = 15
 
