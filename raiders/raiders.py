@@ -8,6 +8,7 @@ import os, yaml
 from enum import IntEnum
 
 from raiders.observation_utils import TeamObservations, ObservationView
+from raiders.gameobjects._gameobject_utils import DisplayLayers
 
 from raiders.gameobjects.resources import (
     Resource,
@@ -259,7 +260,6 @@ class RaiderEnvironment():
         self.center = [self.map_size[0]//2, self.map_size[1]//2]
         self.screen_size = 800, 800
         self.screen_center = [self.screen_size[0]//2, self.screen_size[1]//2]
-        self.sounds = []
 
         self.max_storm_size = math.sqrt(2) * (self.map_size[0] // 2)
         self.min_storm_size = math.sqrt(2) * (self.map_size[0] // 2) / 2 
@@ -321,9 +321,12 @@ class RaiderEnvironment():
         self.metadata.storm_size = self.storm_size
 
         self.objects = []
-        self.addDeposits()
+        self.dynamic_objects = []
         self.effects = []
         self.sounds = []
+        self.display_layers = [[] for layer in range(max(DisplayLayers).value)]
+
+        self.addDeposits()
         
         for id_, player in self.players.items():
             team = player.team
@@ -333,7 +336,8 @@ class RaiderEnvironment():
             self.initializePlayer(player, team)
             self.players[id_] = player
         
-        self.dynamic_objects = [player for player in self.players.values()]
+        for player in self.players.values():
+            self.addDynamicObject(player)
         self.addDynamicObject(self.base)
 
         team_observations = TeamObservations()
@@ -362,26 +366,26 @@ class RaiderEnvironment():
     def addSound(self, sound, pos, scale):
         self.sounds.append((SoundUtils.encodeSoundID(sound), *pos, scale))
 
-    def addDeposits(self, bushes=(160,20), trees=(200,20), stones=(80,12)):        
-        for _ in range(stones[0]):
-            x, y = self.getSpawnLoc()
-            self.addObject(Stone(self, (x,y)))
-
+    def addDeposits(self, bushes=(160,20), trees=(200,20), stones=(80,12)):    
         for _ in range(bushes[0]):
             x, y = self.getSpawnLoc()
             self.addObject(Bush(self, (x,y)))
+
+        for _ in range(stones[0]):
+            x, y = self.getSpawnLoc()
+            self.addObject(Stone(self, (x,y)))
             
         for _ in range(trees[0]):
             x, y = self.getSpawnLoc()
             self.addObject(Tree(self, (x,y)))
 
-        for _ in range(stones[1]):
-            x, y = self.getSpawnLoc2(400)
-            self.addObject(Stone(self, (x,y)))
-
         for _ in range(bushes[1]):
             x, y = self.getSpawnLoc2(400)
             self.addObject(Bush(self, (x,y)))
+
+        for _ in range(stones[1]):
+            x, y = self.getSpawnLoc2(400)
+            self.addObject(Stone(self, (x,y)))
             
         for _ in range(trees[1]):
             x, y = self.getSpawnLoc2(400)
@@ -413,10 +417,20 @@ class RaiderEnvironment():
             x, y = random.randint(50, self.map_size[0]-50), random.randint(50, self.map_size[1]-50)
         return x, y
 
+    def removeFromDisplay(self, obj):
+        display_layer = self.display_layers[obj.display_layer]
+        if obj in display_layer:
+            display_layer.remove(obj)
+    
+    def addToDisplay(self, obj):
+        display_layer = self.display_layers[obj.display_layer]
+        display_layer.append(obj)
+
     def addObject(self, obj):
         obj.env = self
         self.objects.append(obj)
         self.grid.addObject(obj)
+        self.addToDisplay(obj)
 
     def removeObject(self, obj):
         if self.removeDynamicObject(obj):
@@ -425,22 +439,27 @@ class RaiderEnvironment():
             return False
         self.objects.remove(obj)
         self.grid.removeObject(obj)
+        self.removeFromDisplay(obj)
         return True
     
     def addDynamicObject(self, obj):
         obj.env = self
         self.dynamic_objects.append(obj)
+        self.addToDisplay(obj)
     
     def removeDynamicObject(self, obj):
         if obj not in self.dynamic_objects:
             return False
         self.dynamic_objects.remove(obj)
+        self.removeFromDisplay(obj)
         return True
     
     def addEffect(self, obj):
         self.effects.append(obj)
+        self.addToDisplay(obj)
     
     def removeEffect(self, obj):
+        self.removeFromDisplay(obj)
         self.effects.remove(obj)
     
     def drawOnMinimap(self, pos, color, r=4, opacity=100):
@@ -493,33 +512,11 @@ class RaiderEnvironment():
         self.surface.fill((100, 170, 70))
         self.minimap_surface.fill((35, 35, 35, 50))
 
-        for obj in self.effects:
-            obj.display(self.surface, obj.getInfo())
-        
-        self.base.display(self.surface, self.base.getInfo())
-        self.base.displayOnMinimap(self.minimap_surface, self.base.getInfo(), self.surface_to_minimap_scale)
+        for display_layer in self.display_layers:
+            for obj in display_layer:
+                obj.display(self.surface, obj.getInfo())
+                obj.displayOnMinimap(self.minimap_surface, obj.getInfo(), self.surface_to_minimap_scale)
 
-        for obj in self.objects:
-            if isinstance(obj, Tree):
-                continue
-            obj.display(self.surface, obj.getInfo())
-            obj.displayOnMinimap(self.minimap_surface, obj.getInfo(), self.surface_to_minimap_scale)
-        for obj in self.dynamic_objects:
-            if isinstance(obj, Player) or isinstance(obj, Base):
-                continue
-            obj.display(self.surface, obj.getInfo()) 
-            obj.displayOnMinimap(self.minimap_surface, obj.getInfo(), self.surface_to_minimap_scale)
-        for obj in self.getPlayers():
-            if obj.health <= 0: 
-                continue
-            obj.display(self.surface, obj.getInfo())
-            obj.displayOnMinimap(self.minimap_surface, obj.getInfo(), self.surface_to_minimap_scale)
-        for obj in self.objects:
-            if not isinstance(obj, Tree):
-                continue
-            obj.display(self.surface, obj.getInfo())
-            obj.displayOnMinimap(self.minimap_surface, obj.getInfo(), self.surface_to_minimap_scale)
-        
         if self.storm_size != self.max_storm_size:
             if self.storm_size != self.min_storm_size:
                 pygame.draw.circle(self.storm_surface, (100, 0, 30), self.center, int(self.storm_size), width=3)  # transparent center
