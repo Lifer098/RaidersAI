@@ -27,6 +27,7 @@ class Effect(GameObject):
     def step(self):
         if self.effect_tick == 0:
             for player in self.env.getPlayers():
+                if player.health <= 0: continue
                 if math.dist(player.pos, self.pos) <= self.size: 
                     self.effectPlayer(player)
             self.effect_tick = self.effect_speed
@@ -56,11 +57,10 @@ class Heal(Effect):
     
     def effectPlayer(self, player):
         if self.lifetime == 80:
-            healing = min(player.health + self.initial_healing, 40) - player.health
+            healing = min(player.health + self.initial_healing, player.max_health) - player.health
         else:
-            healing = min(player.health + self.healing, 40) - player.health
-        player.changeHealth(healing)
-        self.player.events.change_health_team_player += healing
+            healing = min(player.health + self.healing, player.max_health) - player.health
+        player.health += healing
         
     @staticmethod
     def render(info):
@@ -80,7 +80,7 @@ class Heal(Effect):
     
     def getInfo(self):
         return ObjectInfo(
-            type_ = self.__class__.__name__,
+            type = self.__class__.__name__,
             position = self.pos,
             size = self.size,
             attack_tick = self.effect_tick,
@@ -119,14 +119,6 @@ class Explosion(Effect):
         for obj in self.objects:
             if isinstance(obj, self.explodable_objects) and (math.dist(obj.pos, self.pos) <= obj.size + self.size - 0.5):
                 obj.recieveHit(self, self.damage, self.player)
-
-    def effectPlayer(self, player):
-        if self.lifetime == 80:
-            healing = min(player.health + self.healing*6, 40) - player.health
-        else:
-            healing = min(player.health + self.healing, 40) - player.health
-        player.changeHealth(healing)
-        self.player.events.change_health_team_player += healing
         
     @staticmethod
     def render(info):
@@ -146,7 +138,7 @@ class Explosion(Effect):
     
     def getInfo(self):
         return ObjectInfo(
-            type_ = self.__class__.__name__,
+            type = self.__class__.__name__,
             position = self.pos,
             size = self.size,
             attack_tick = self.effect_tick,

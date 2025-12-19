@@ -81,7 +81,7 @@ class Projectile(GameObject):
     
     def getInfo(self):
         return ObjectInfo(
-            type_ = self.__class__.__name__,
+            type = self.__class__.__name__,
             position = self.pos,
             size = self.size,
             angle = self.angle,
@@ -284,7 +284,7 @@ class Frag(Projectile):
 
     def getInfo(self):
         return ObjectInfo(
-            type_ = self.__class__.__name__,
+            type = self.__class__.__name__,
             position = self.pos,
             size = self.size,
             angle = self.angle,

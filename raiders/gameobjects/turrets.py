@@ -32,9 +32,9 @@ class Turret(Object):
     brown = (120, 80, 60)
     lightbrown = (210, 170, 130)
 
-    def __init__(self, env, pos, angle, team, player):
+    def __init__(self, env, pos, angle, player):
         super().__init__(env, pos, max_size=self.max_size, max_health=self.max_health)
-        self.team = team
+        self.team = player.team
         self.player = player
         self.angle = angle
 
@@ -143,7 +143,7 @@ class Turret(Object):
 
     def getInfo(self):
         return ObjectInfo(
-            type_ = self.__class__.__name__,
+            type = self.__class__.__name__,
             team = self.team,
             position = self.pos,
             angle = self.angle,
@@ -280,8 +280,8 @@ class Scattershot(Turret):
             team_color = CONFIG["team_colors"]["defenders" if info.team==1 else "raiders"]
             s = info.size
 
-            pygame.draw.circle(surface, darken(Turret.brown, scale=0.85), center, info.size)
-            pygame.draw.circle(surface, Turret.brown, center, info.size-3)
+            pygame.draw.circle(surface, darken(Turret.lightbrown, scale=0.45), center, info.size)
+            pygame.draw.circle(surface, darken(Turret.lightbrown, scale=0.6), center, info.size-3)
 
             pygame.draw.polygon(surface, darken(Turret.grey), 
                                 [

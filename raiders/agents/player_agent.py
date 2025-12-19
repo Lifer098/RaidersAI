@@ -7,7 +7,7 @@ import math, time
 from enum import Enum
 
 from raiders.agents.base_agent import BaseAgent
-from raiders.raiders import Actives
+from raiders.gameobjects._gameobject_utils import Actives
 from raiders import global_events
 
 class PlayerAgent(BaseAgent):
@@ -42,7 +42,7 @@ class PlayerAgent(BaseAgent):
                 elif event.y < 0:
                     scroll = -1
 
-        active = self.observation.self.active
+        active = self.observation.me.active
         match active:
             case Actives.TURRET | Actives.SCATTERSHOT | Actives.BIGTURRET:
                 choices = [Actives.TURRET, Actives.SCATTERSHOT, Actives.BIGTURRET]
@@ -78,7 +78,7 @@ class PlayerAgent(BaseAgent):
         dx, dy = mx-cx, my-cy
         target_angle = math.atan2(dy, dx)
 
-        player_angle = self.observation.self.angle
+        player_angle = self.observation.me.angle
         d_angle = (target_angle - player_angle) % (2*math.pi)
         if d_angle < abs(d_angle - 2*math.pi):
             if d_angle < 0.09817: angle = 0
@@ -94,7 +94,7 @@ class PlayerAgent(BaseAgent):
         view_minimap = False
         if keys[pygame.K_LSHIFT]: view_minimap = True
 
-        if active == self.observation.self.active:
+        if active == self.observation.me.active:
             active = 0
 
         return (ax, ay, active, action, angle, view_minimap)

@@ -27,9 +27,9 @@ class Spike(Object):
     lightgrey = (130, 130, 130)
     brown = (120, 80, 60)
 
-    def __init__(self, env, pos, team, player):
-        super().__init__(env, pos, max_size=Spike.max_size, max_health=Spike.max_health)
-        self.team = team
+    def __init__(self, env, pos, angle, player):
+        super().__init__(env, pos, angle=angle, max_size=self.max_size, max_health=self.max_health)
+        self.team = player.team
         self.player = player
 
         self.attack_tick = 0
@@ -57,7 +57,7 @@ class Spike(Object):
 
     @staticmethod
     def render(info):
-        relevantinfo = (info.hit, info.team)
+        relevantinfo = (info.angle, info.hit, info.team)
 
         if relevantinfo not in Spike.sprite_cache:
             image_size = (100, 100)
@@ -71,6 +71,8 @@ class Spike(Object):
             pygame.draw.circle(surface, darken(Spike.brown, scale=0.94), center, 18.5)
             pygame.draw.circle(surface, darken(Spike.brown, scale=1.1), center, 15)
             pygame.draw.circle(surface, CONFIG["team_colors"]["defenders" if info.team==1 else "raiders"], center, 8)
+
+            surface = pygame.transform.rotate(surface, -(info.angle)/math.pi*180)
             
             surface = surface.convert()
             surface.set_colorkey((0, 0, 0))
@@ -85,9 +87,10 @@ class Spike(Object):
      
     def getInfo(self):
         return ObjectInfo(
-            type_ = self.__class__.__name__,
+            type = self.__class__.__name__,
             team = self.team,
             position = self.pos,
+            angle = self.angle,
             size = self.size,
             health = self.health,
             hit = self.hit,

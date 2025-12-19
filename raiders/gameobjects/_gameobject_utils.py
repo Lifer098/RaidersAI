@@ -6,13 +6,26 @@ from enum import IntEnum
 import pygame
 import pygame.surfarray as surfarray
 
+class Actives(IntEnum):
+    SWORD = 1
+    BOW = 2
+    AXE = 3
+    FRAG = 4
+    WOODWALL = 5
+    STONEWALL = 6
+    SPIKE = 7
+    TURRET = 8
+    HEAL = 9
+    SCATTERSHOT = 10
+    BIGTURRET = 11
+
 class DisplayLayers(IntEnum):
     BACKGROUND_ELEMENT = 1
     BOTTOM_EFFECT = 2
     BOTTOM_RESOURCE = 3
     DEFAULT = 4
     PLAYER_BOTTOM_ELEMENT = 5
-    PLAYERS = 6
+    PLAYER = 6
     PLAYER_TOP_ELEMENT = 7
     TOP_RESOURCE = 8
     OBJECT_HUD = 9

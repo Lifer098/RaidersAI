@@ -1,5 +1,6 @@
 import pygame
 import math
+import random
 
 from raiders.gameobjects._gameobject_info import ObjectInfo, CONFIG
 from raiders.gameobjects._gameobject_registry import GAMEOBJECTS
@@ -19,7 +20,8 @@ class Resource(Object):
     display_layer = DisplayLayers.BOTTOM_RESOURCE
 
     def __init__(self, env, pos, max_health, max_size):
-        super().__init__(env, pos=pos, max_health=max_health, max_size=max_size, min_size=0.5*max_size)
+        angle = random.uniform(0, 2*math.pi)
+        super().__init__(env, pos=pos, angle=angle, max_health=max_health, max_size=max_size, min_size=0.5*max_size)
 
 
 class Bush(Resource):
@@ -48,7 +50,7 @@ class Bush(Resource):
 
     @staticmethod
     def render(info):
-        relevantinfo = (info.size, info.hit)
+        relevantinfo = (info.angle, info.size, info.hit)
 
         if relevantinfo not in Bush.sprite_cache:
             image_size = (100, 100)
@@ -62,6 +64,8 @@ class Bush(Resource):
             for p in polygon(center, 7, 3): # berries
                 pygame.draw.circle(surface, darken(Bush.mutedred, 0.9), p, 7)
             
+            surface = pygame.transform.rotate(surface, -(info.angle)/math.pi*180)
+
             scale = info.size / Bush.max_size
             surface = scale_contents(surface, scale)
             surface = surface.convert()
@@ -104,7 +108,7 @@ class Tree(Resource):
     
     @staticmethod
     def render(info):
-        relevantinfo = (info.size, info.hit)
+        relevantinfo = (info.angle, info.size, info.hit)
 
         if relevantinfo not in Tree.sprite_cache:
             image_size = (100, 100)
@@ -119,6 +123,8 @@ class Tree(Resource):
                 pygame.draw.circle(surface, Tree.darkgreen, p, 7)
             pygame.draw.polygon(surface, darken(Tree.darkgreen, scale=1.1), polygon(center, 20.5, 3))
             pygame.draw.polygon(surface, darken(Tree.darkgreen, scale=1.1), polygon(center, 20.5, 3, flip=-1))
+
+            surface = pygame.transform.rotate(surface, -(info.angle)/math.pi*180)
             
             scale = info.size / Tree.max_size
             surface = scale_contents(surface, scale)
@@ -159,7 +165,7 @@ class Stone(Resource):
 
     @staticmethod
     def render(info):
-        relevantinfo = (info.size, info.hit)
+        relevantinfo = (info.angle, info.size, info.hit)
 
         if relevantinfo not in Stone.sprite_cache:
             image_size = (100, 100)
@@ -169,6 +175,8 @@ class Stone(Resource):
             pygame.draw.polygon(surface, darken(Stone.lightgrey, scale=0.9), polygon(center, 40, 8))
             pygame.draw.polygon(surface, Stone.lightgrey, polygon(center, 32, 7))
             pygame.draw.polygon(surface, darken(Stone.lightgrey, scale=1.15), polygon(center, 20, 6))
+
+            surface = pygame.transform.rotate(surface, -(info.angle)/math.pi*180)
             
             scale = info.size / Stone.max_size
             surface = scale_contents(surface, scale)
