@@ -505,7 +505,7 @@ class RaiderEnvironment():
         if self.t % 20 == 0:
             for player in self.getPlayers():
                 if math.dist(player.pos, self.center) > self.storm_size:
-                    player.recieveHit(self.dummy_player, 5, self.dummy_player)
+                    player.recieveHit(None, 5, None)
 
 
         pygame.event.pump()

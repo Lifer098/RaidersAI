@@ -15,6 +15,8 @@ from raiders.gameobjects._gameobject_utils import (
 from raiders.gameobjects.gameobject import GameObject
 
 class Effect(GameObject):
+    display_layer = DisplayLayers.BOTTOM_EFFECT
+
     def __init__(self, env, pos, player, lifetime):
         self.env = env
         self.pos = pos
@@ -88,6 +90,7 @@ class Heal(Effect):
         )
     
 class Explosion(Effect):
+    display_layer = DisplayLayers.TOP_EFFECT
     sprite_cache = {}
 
     size = 60

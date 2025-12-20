@@ -67,7 +67,7 @@ class Player(Object):
 
     max_dead_tick = 20
 
-    def __init__(self, env, pos, team, id_):
+    def __init__(self, env, pos, team, id_, skins=None):
         super().__init__(env, pos, self.max_health, self.max_size, team=team)
         self.id_ = id_
         self.name = f"Player {id_}"
@@ -75,6 +75,9 @@ class Player(Object):
         self.pos = list(pos)
         self.team = team
         self.team_color = CONFIG["team_colors"]["defenders" if team==1 else "raiders"]
+        
+        if skins is None:
+            self.skins = {}
 
         self.dead_tick = 0
 
@@ -276,17 +279,19 @@ class Player(Object):
     def recieveHitUpdate(self, obj, damage):
         super().recieveHitUpdate(obj, damage)
 
+        self.slow_tick = self.slow_duration
+        self.env.addSound("playerhurt", self.pos, 0.2)
+
+        if obj is None: return
+
         knockback = 3
         dx, dy = self.pos[0]-obj.pos[0], self.pos[1]-obj.pos[1]
         mag = max(0.5, math.sqrt(dx*dx + dy*dy))
         dx, dy = dx * knockback / mag, dy * knockback / mag
         self.pos = (self.pos[0]+dx, self.pos[1]+dy)
 
-        self.slow_tick = self.slow_duration
         self.knockback_dir = (dx, dy)
         self.knockback_tick = self.knockback_duration
-        
-        self.env.addSound("playerhurt", self.pos, 0.2)
     
     def onDeath(self, obj, damage):
         if isinstance(obj, Player):
@@ -399,14 +404,16 @@ class Player(Object):
                 #rotated_image = pygame.transform.rotate(info.env.sprites.sword, -(info.angle)/math.pi*180+attack_offset)
                 _angle = round_to_5625(-(info.angle)/math.pi*180+attack_offset)
                 _active = info.frames[2] < info.attack_tick < info.frames[1]+anticipation
-                weapon_sprite = WeaponDisplay.render(("sword", _angle, _active))
+                _anticipation = info.frames[1] <= info.attack_tick <= info.frames[1]+anticipation
+                weapon_sprite = WeaponDisplay.render(("sword", _angle, _active, _anticipation, info.skins))
                 weapon_rect = weapon_sprite.get_rect()
                 weapon_rect.center = composite_center
                 composite_surface.blit(weapon_sprite, weapon_rect)
             case Actives.BOW:
                 _angle = round_to_5625(-(info.angle)/math.pi*180+attack_offset)
                 _active = False
-                weapon_sprite = WeaponDisplay.render(("bow", _angle, _active))
+                _anticipation = False
+                weapon_sprite = WeaponDisplay.render(("bow", _angle, _active, _anticipation, info.skins))
                 weapon_rect = weapon_sprite.get_rect()
                 weapon_rect.center = composite_center
                 composite_surface.blit(weapon_sprite, weapon_rect)
@@ -423,7 +430,8 @@ class Player(Object):
                         attack_offset = rest*(1-scale) + windup*scale
                 _angle = round_to_5625(-(info.angle)/math.pi*180+attack_offset)
                 _active = info.frames[2] < info.attack_tick < info.frames[1]+anticipation
-                weapon_sprite = WeaponDisplay.render(("axe", _angle, _active))
+                _anticipation = info.frames[1] <= info.attack_tick <= info.frames[1]+anticipation
+                weapon_sprite = WeaponDisplay.render(("axe", _angle, _active, _anticipation, info.skins))
                 weapon_rect = weapon_sprite.get_rect()
                 weapon_rect.center = composite_center
                 composite_surface.blit(weapon_sprite, weapon_rect)
@@ -502,6 +510,7 @@ class Player(Object):
             attack_tick = self.attack_tick,
             shake = self.shake,
             offset = self.offset,
+            skins = self.skins,
         )
     
     def getInfoHidden(self):
@@ -520,29 +529,42 @@ class Player(Object):
             attack_tick = self.attack_tick,
             shake = self.shake,
             offset = self.offset,
+            skins = self.skins,
         )
     
 
 class WeaponDisplay:
     sprite_cache = {}
+    sprites = {}
 
-    sprites = {
-        "sword": load_asset("sword.png"),
-        "bow": load_asset("bow.png"),
-        "axe": load_asset("axe.png"),
-    }
+    @staticmethod
+    def loadSprite(sprite):
+        if sprite not in WeaponDisplay.sprites:
+            WeaponDisplay.sprites[sprite] = load_asset(f"{sprite}.png")
+        return WeaponDisplay.sprites[sprite]
 
     @staticmethod
     def render(info):
-        weapon, angle, active = info
-        relevantinfo = (weapon, angle, active)
+        weapon, angle, active, anticipation, skins = info
+        skin = skins.get(weapon)
+        relevantinfo = (weapon, angle, active, anticipation, skin)
 
         if relevantinfo not in WeaponDisplay.sprite_cache:
-            surface = pygame.transform.rotate(WeaponDisplay.sprites[weapon], angle)
+            if skin is None:
+                sprite = WeaponDisplay.loadSprite(weapon)
+            else:
+                if active and anticipation:
+                    sprite = WeaponDisplay.loadSprite(f"{weapon}_{skin}_anticipation")
+                elif active:
+                    sprite = WeaponDisplay.loadSprite(f"{weapon}_{skin}_active")
+                else:
+                    sprite = WeaponDisplay.loadSprite(f"{weapon}_{skin}")
+
+            surface = pygame.transform.rotate(sprite, angle)
             surface = surface.convert()
             surface.set_colorkey((0, 0, 0))
 
-            if active:
+            if skin is None and active:
                 fill_visible_pixels(surface, scale=0.8)
 
             WeaponDisplay.sprite_cache[relevantinfo] = surface

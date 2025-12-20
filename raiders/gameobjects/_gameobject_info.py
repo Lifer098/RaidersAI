@@ -36,6 +36,7 @@ player_infos = [
     ("active", None),
     ("frames", None),
     ("kills", None),
+    ("skins", {})
 ]
 
 PlayerInfo = namedtuple("PlayerInfo", 
