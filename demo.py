@@ -2,11 +2,11 @@ import raiders.env_utils as env_utils
 from raiders import global_events
 
 import pygame
-
+print(env_utils.AgentScripts)
 agent_scripts = [
-    (env_utils.AgentScripts.PlayerAgent(), 1, "raider"),
-    (env_utils.AgentScripts.BasicAgent2(), 7, "raider"),
-    (env_utils.AgentScripts.BasicAgent2(), 8, "defender")
+    #(env_utils.AgentScripts.PlayerAgent(), 1, "raider"),
+    (env_utils.AgentScripts.MatthewAgent(), 8, "raider"),
+    (env_utils.AgentScripts.MatthewAgent(), 8, "defender")
 ]
 
 env = env_utils.RaiderEnvironmentWrapper(mode="god")

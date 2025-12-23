@@ -5,7 +5,7 @@ from collections.abc import Mapping
 
 import six
 
-from attrdict.mixins import MutableAttr
+from raiders.attrdict.mixins import MutableAttr
 
 
 __all__ = ['AttrDefault']

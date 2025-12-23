@@ -2,7 +2,6 @@ import pygame
 import numpy as np
 import random, math, os
 import keyboard as k
-from attrdict import AttrDict
 import math, time
 from enum import Enum
 

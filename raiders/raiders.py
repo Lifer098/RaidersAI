@@ -2,7 +2,7 @@ import pygame
 
 import numpy as np
 import random, math, time
-from attrdict import AttrDict
+from raiders.attrdict import AttrDict
 from collections import namedtuple
 import os, yaml
 from enum import IntEnum

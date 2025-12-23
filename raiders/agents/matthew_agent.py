@@ -2,11 +2,10 @@ import pygame
 import numpy as np
 import random, math, os
 import keyboard as k
-from attrdict import AttrDict
 import math, time
 from enum import Enum
 
-from agents.base_agent import BaseAgent
+from raiders.agents.base_agent import BaseAgent
 
 def dist2(v1, v2):
     return (v2[0]-v1[0])**2 + (v2[1]-v1[1])**2

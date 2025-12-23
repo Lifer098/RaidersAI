@@ -1,4 +1,3 @@
-from attrdict import AttrDict
 import pygame
 import math
 

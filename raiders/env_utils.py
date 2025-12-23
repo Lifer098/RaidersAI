@@ -5,7 +5,7 @@ import cv2
 import importlib
 import inspect
 import keyboard as k
-from attrdict import AttrDict
+from raiders.attrdict import AttrDict
 import math, time
 from enum import Enum
 
