@@ -7,7 +7,7 @@ with open(config_path, "r") as f:
     CONFIG = yaml.safe_load(f)
 
 infos = [
-    ("type_", None),
+    ("type", None),
     ("position", None),
     ("size", None),
     ("health", None),
@@ -18,14 +18,42 @@ infos = [
     ("lifetime", None),
     ("shake", 0),
     ("offset", (0,0)),
+    ("relative_position", None),
 ]
 
 ObjectInfo = namedtuple("ObjectInfo", 
     [info[0] for info in infos]
 )
+ObjectInfo.__new__.__defaults__ = tuple(
+    info[1] for info in infos
+)
 
-ObjectInfo.__new__.__defaults__ = tuple(info[1] for info in infos)
+player_infos = [
+    ("id_", None),
+    ("food", None),
+    ("wood", None),
+    ("stone", None),
+    ("active", None),
+    ("frames", None),
+    ("kills", None),
+    ("skins", {})
+]
 
 PlayerInfo = namedtuple("PlayerInfo", 
-    ["id_", "position", "size", "health", "angle", "hit", "team", "active", "kills"]
+    [info[0] for info in infos+player_infos]
+)
+PlayerInfo.__new__.__defaults__ = tuple(
+    info[1] for info in infos+player_infos
+)
+
+minimap_infos = [
+    ("color", None),
+    ("r", 4),
+]
+
+MinimapInfo = namedtuple("MinimapInfo", 
+    [info[0] for info in minimap_infos]
+)
+MinimapInfo.__new__.__defaults__ = tuple(
+    info[1] for info in minimap_infos
 )

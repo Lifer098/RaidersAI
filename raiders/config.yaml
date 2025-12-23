@@ -4,15 +4,21 @@ team_colors:
 
 costs:
   refund_amount: 0.3
-  arrow: [2, 0, 0]
-  frag: [0, 15, 0]
-  woodwall: [10, 0, 0]
-  stonewall: [0, 20, 0]
-  spike: [12, 12, 0]
-  turret: [90, 70, 0]
-  scattershot: [40, 30, 0]
-  bigturret: [200, 160, 0]
-  heal: [0, 0, 15]
+  Arrow: [2, 0, 0]
+  Frag: [0, 15, 0]
+  WoodWall: [10, 0, 0]
+  StoneWall: [0, 20, 0]
+  Spike: [12, 12, 0]
+  Turret: [90, 70, 0]
+  Scattershot: [40, 30, 0]
+  BigTurret: [200, 160, 0]
+  Heal: [0, 0, 15]
+
+sounds:
+  WoodWall: woodplace
+  StoneWall: stoneplace
+  Spike: turretplace
+  Turret: turretplace
 
 player:
   size: 15

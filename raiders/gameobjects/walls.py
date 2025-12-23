@@ -1,5 +1,6 @@
 from attrdict import AttrDict
 import pygame
+import math
 
 from raiders.gameobjects._gameobject_info import ObjectInfo, CONFIG
 from raiders.gameobjects._gameobject_registry import GAMEOBJECTS
@@ -15,18 +16,11 @@ from raiders.gameobjects.object import Object
 class Wall(Object):
     display_layer = DisplayLayers.PLAYER_BOTTOM_ELEMENT
 
-    def __init__(self, env, pos, max_size, max_health, team):
-        super().__init__(env, pos=pos, max_size=max_size, max_health=max_health)
-        self.team = team
+    incr = math.radians(15)
 
-    @classmethod
-    def display(cls, surface, info, pos=None):
-        if pos is None:
-            pos = info.position
-
-        sprite_surface = cls.render(info)
-        rect = sprite_surface.get_rect(center=pos)
-        surface.blit(sprite_surface, rect)
+    def __init__(self, env, pos, angle, player):
+        super().__init__(env, pos=pos, angle=angle, max_size=self.max_size, max_health=self.max_health)
+        self.team = player.team
     
     def recieveHitObject(self, obj, damage):
         if isinstance(obj, GAMEOBJECTS["Bullet"]):
@@ -35,10 +29,13 @@ class Wall(Object):
     
     def getInfo(self):
         return ObjectInfo(
-            type_ = self.__class__.__name__,
+            type = self.__class__.__name__,
             position = self.pos,
+            angle = round(self.angle / self.incr) * self.incr,
             size = self.size,
             health = self.health,
+            shake = self.shake,
+            offset = self.offset,
             hit = self.hit,
         )
     
@@ -47,13 +44,14 @@ class WoodWall(Wall):
     max_size = 20
     max_health = 25
 
+    shake_scale = 0.5
+    move_scale = 0.5
+
     brown = (120, 80, 60)
     dark_brown = (104, 70, 52)
-
-    def __init__(self, env, pos, team):
-        super().__init__(env, pos, max_size=self.max_size, max_health=self.max_health, team=team)
     
     def recieveHitUpdate(self, obj, damage):
+        super().recieveHitUpdate(obj, damage)
         self.env.addSound("woodhit", self.pos, 0.4)
     
     def onDeath(self, obj, damage):
@@ -64,7 +62,7 @@ class WoodWall(Wall):
     
     @staticmethod
     def render(info):
-        relevantinfo = (info.hit,)
+        relevantinfo = (info.angle, info.hit)
 
         if relevantinfo not in WoodWall.sprite_cache:
             image_size = (100, 100)
@@ -73,6 +71,8 @@ class WoodWall(Wall):
 
             pygame.draw.polygon(surface, WoodWall.dark_brown, polygon(center, 20, 8))
             pygame.draw.polygon(surface, WoodWall.brown, polygon(center, 15, 8))
+
+            surface = pygame.transform.rotate(surface, -(info.angle)/math.pi*180)
             
             surface = surface.convert()
             surface.set_colorkey((0, 0, 0))
@@ -92,11 +92,9 @@ class StoneWall(Wall):
 
     dark_grey = (66, 66, 66)
     grey = (84, 84, 84)
-
-    def __init__(self, env, pos, team):
-        super().__init__(env, pos, max_size=self.max_size, max_health=self.max_health, team=team)
     
     def recieveHitUpdate(self, obj, damage):
+        super().recieveHitUpdate(obj, damage)
         self.env.addSound("stoneplace", self.pos, 0.4)
     
     def onDeath(self, obj, damage):
@@ -107,7 +105,7 @@ class StoneWall(Wall):
     
     @staticmethod
     def render(info):
-        relevantinfo = (info.hit, info.team)
+        relevantinfo = (info.angle, info.hit, info.team)
 
         if relevantinfo not in StoneWall.sprite_cache:
             image_size = (100, 100)
@@ -117,6 +115,8 @@ class StoneWall(Wall):
             pygame.draw.polygon(surface, StoneWall.dark_grey, polygon(center, 30, 8))
             pygame.draw.polygon(surface, CONFIG["team_colors"]["defenders" if info.team==1 else "raiders"], polygon(center, 25, 8))
             pygame.draw.polygon(surface, StoneWall.grey, polygon(center, 21, 8))
+
+            surface = pygame.transform.rotate(surface, -(info.angle)/math.pi*180)
             
             surface = surface.convert()
             surface.set_colorkey((0, 0, 0))
@@ -131,11 +131,14 @@ class StoneWall(Wall):
     
     def getInfo(self):
         return ObjectInfo(
-            type_ = self.__class__.__name__,
+            type = self.__class__.__name__,
             position = self.pos,
+            angle = self.angle,
             size = self.size,
             health = self.health,
             hit = self.hit,
+            shake = self.shake,
+            offset = self.offset,
             team = self.team,
         )
     

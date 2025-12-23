@@ -5,13 +5,13 @@ import pygame
 
 agent_scripts = [
     (env_utils.AgentScripts.PlayerAgent(), 1, "raider"),
-    #(env_utils.AgentScripts.BasicAgent2(), 7, "raider"),
-    #(env_utils.AgentScripts.BasicAgent2(), 8, "defender")
+    (env_utils.AgentScripts.BasicAgent2(), 7, "raider"),
+    (env_utils.AgentScripts.BasicAgent2(), 8, "defender")
 ]
 
 env = env_utils.RaiderEnvironmentWrapper(mode="god")
 env.loadAgentScripts(agent_scripts)
-env.addAgent(team="defender")
+#env.addAgent(team="defender")
 env.reset()
 c = 0
 scores = [0,0]

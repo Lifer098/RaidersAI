@@ -15,6 +15,7 @@ from raiders.gameobjects.object import Object
 
 
 class Base(Object):
+    display_layer = DisplayLayers.BOTTOM_EFFECT
     sprite_cache = {}
 
     max_size = 40

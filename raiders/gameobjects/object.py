@@ -15,16 +15,19 @@ from raiders.gameobjects._gameobject_utils import (
 from raiders.gameobjects.gameobject import GameObject
 
 class Object(GameObject):
+    incr = math.radians(15)
+
     shake_scale = 0
     move_scale = 0
 
-    def __init__(self, env, pos, max_health, max_size, min_size=None, team=-1):
+    def __init__(self, env, pos, max_health, max_size, angle=0, min_size=None, team=-1):
         self.env = env
         self.pos = tuple(pos)
         self.max_size = max_size
         self.min_size = min_size if min_size is not None else max_size
         self.max_health = max_health
         self.team = team
+        self.angle = angle
 
         self.health = max_health
         self.size = max_size
@@ -34,14 +37,15 @@ class Object(GameObject):
         self.hit = False
 
     def recieveHit(self, obj, damage, player):
+        if self.health <= 0:
+            return
+        
         pre_hit_health = self.health
         if isinstance(obj, GAMEOBJECTS["Player"]):
-            self.hit = True
             damage = min(self.health, damage)
             self.health -= damage
             self.recieveHitPlayer(obj, damage)
         elif isinstance(obj, GAMEOBJECTS["Explosion"]):
-            self.hit = True
             damage = min(self.health, damage)
             self.health -= damage
         else:
@@ -55,12 +59,16 @@ class Object(GameObject):
             self.env.removeObject(self)
             self.onDeath(obj, damage)
     
-    def recieveHitUpdate(self, player, damage):
+    def recieveHitUpdate(self, obj, damage):
+        self.hit = True
+
         ratio = self.health / self.max_health
         self.size = self.max_size * ratio + self.min_size * (1 - ratio)
         self.shake = damage * self.shake_scale
 
-        dy, dx = self.pos[1] - player.pos[1], self.pos[0] - player.pos[0]
+        if obj is None: return
+
+        dy, dx = self.pos[1] - obj.pos[1], self.pos[0] - obj.pos[0]
         angle = math.atan2(dy, dx)
         self.offset = self.offset[0] + damage * self.move_scale * math.cos(angle), self.offset[1] + damage * self.move_scale * math.sin(angle)
     
@@ -73,8 +81,9 @@ class Object(GameObject):
 
     def getInfo(self):
         return ObjectInfo(
-            type_ = self.__class__.__name__,
+            type = self.__class__.__name__,
             position = self.pos,
+            angle = round(self.angle / self.incr) * self.incr,
             size = self.size,
             health = self.health,
             hit = self.hit,

@@ -17,10 +17,10 @@ from raiders.gameobjects.gameobject import GameObject
 class Projectile(GameObject):
     display_layer = DisplayLayers.PLAYER_TOP_ELEMENT
 
-    subframes = 8
+    subframes = 12
 
-    transparent_objects = ("Base",)
-    friendly_objects = ("Spike", "StoneWall", "Player", "Turret")
+    transparent_objects = ("Base", "Spike")
+    friendly_objects = ("StoneWall", "Player", "Turret")
 
     def __init__(self, env, pos, angle, team, player, damage, speed, range, size):
         self.env = env
@@ -81,7 +81,7 @@ class Projectile(GameObject):
     
     def getInfo(self):
         return ObjectInfo(
-            type_ = self.__class__.__name__,
+            type = self.__class__.__name__,
             position = self.pos,
             size = self.size,
             angle = self.angle,
@@ -138,7 +138,7 @@ class ChargedArrow(Arrow):
     size = 5
     range = 800
 
-    subframes = 20
+    subframes = 24
 
     arrow_sprite = load_asset("arrow.png")
     sprite_cache = {}
@@ -212,6 +212,9 @@ class Frag(Projectile):
     size = 12
     lifetime = 40
 
+    transparent_objects = ("Base", )
+    friendly_objects = ("Spike", "StoneWall", "Player", "Turret")
+
     shake_scale = 15
 
     white = (255, 255, 255)
@@ -284,7 +287,7 @@ class Frag(Projectile):
 
     def getInfo(self):
         return ObjectInfo(
-            type_ = self.__class__.__name__,
+            type = self.__class__.__name__,
             position = self.pos,
             size = self.size,
             angle = self.angle,

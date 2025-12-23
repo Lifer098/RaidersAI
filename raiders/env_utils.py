@@ -9,7 +9,8 @@ from attrdict import AttrDict
 import math, time
 from enum import Enum
 
-from raiders.raiders import RaiderEnvironment, loadAsset, Actives
+from raiders.raiders import RaiderEnvironment
+from raiders.gameobjects._gameobject_utils import load_asset, Actives
 from raiders.sound_utils import SoundUtils
 from raiders.agents.base_agent import BaseAgent
 from raiders.agents.player_agent import PlayerAgent
@@ -55,14 +56,14 @@ class RaiderEnvironmentWrapper():
         self.mode = mode
         self.env = RaiderEnvironment()
 
-        self.food_img = loadAsset("food.png")
-        self.wood_img = loadAsset("wood.png")
-        self.stone_img = loadAsset("stone.png")
+        self.food_img = load_asset("food.png")
+        self.wood_img = load_asset("wood.png")
+        self.stone_img = load_asset("stone.png")
 
         icon_dir = os.path.join(os.path.dirname(__file__), "assets/images/icons")
         icon_files = [f for f in os.listdir(icon_dir) if f.endswith((".png"))]
         self.icons = AttrDict({
-            f[:-4] : loadAsset(f"icons/{f}") for f in icon_files
+            f[:-4] : load_asset(f"icons/{f}") for f in icon_files
         })
 
         self.font = pygame.font.Font(None, 30) 
@@ -140,36 +141,35 @@ class RaiderEnvironmentWrapper():
 
     def reset(self):
         self.actions = {id_: [1, 1, 0, 0, 2] for id_ in self.env.players.keys()}
-        observations, info = self.env.reset()
+        team_observations, info = self.env.reset()
 
         for script in self.scripts:
             team = script.__team__
-            team_observation = info.team_observations[team]
-            script.handleTeamObservation(team_observation)
+            script.handleTeamObservation(team_observations.getObservations(team))
         
         for id_, script in self.active_ids.items():
             if script is None: continue
-            action = script.getAction(observations[id_], id_)
+            team = script.__team__
+            action = script.getAction(team_observations.getObservations(team)[id_], id_)
             self.actions[id_] = action
         
-        return observations, info
+        return team_observations, info
 
     def step(self, display=False, sounds=False, debug=False, get_inputs=True):   
         if not get_inputs:
             self.env.step(self.actions, get_inputs=False)
             
-        observations, winning_team, terminated, truncated, info = self.env.step(self.actions, get_inputs=True)
-        self.observations = observations
-        #cv2.imshow("img", cv2.resize(observations[0].image_obs, (800,800), interpolation=cv2.INTER_NEAREST))
+        team_observations, winning_team, terminated, truncated, info = self.env.step(self.actions, get_inputs=True)
+        self.observations = team_observations.getObservations(1) | team_observations.getObservations(2)
 
         for script in self.scripts:
             team = script.__team__
-            team_observation = info.team_observations[team]
-            script.handleTeamObservation(team_observation)
+            script.handleTeamObservation(team_observations.getObservations(team))
         
         for id_, script in self.active_ids.items():
             if script is None: continue
-            action = script.getAction(observations[id_], id_)
+            team = script.__team__
+            action = script.getAction(team_observations.getObservations(team)[id_], id_)
             self.actions[id_] = action
         
         if self.mode == "god":
@@ -192,7 +192,7 @@ class RaiderEnvironmentWrapper():
         else:
             pygame.event.pump()
         
-        return observations, winning_team, terminated, truncated, info
+        return team_observations, winning_team, terminated, truncated, info
     
     def display(self, player_id, sounds, debug):
         old_camera_scale = self.env.camera.scale
@@ -214,7 +214,7 @@ class RaiderEnvironmentWrapper():
         #frame = pygame.transform.flip(frame, False, True)
 
         if not (self.mode == "god" and self.camera_mode == "god"):
-            player_observation = self.observations[player_id].self
+            player_observation = self.observations[player_id].me
 
             for img, text, y in zip(
                 (self.food_img, self.wood_img, self.stone_img), 

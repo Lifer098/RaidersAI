@@ -3,7 +3,7 @@ import numpy as np
 import pygame
 
 from raiders.gameobjects._gameobject_registry import GAMEOBJECTS
-from raiders.gameobjects._gameobject_info import ObjectInfo, CONFIG
+from raiders.gameobjects._gameobject_info import MinimapInfo, ObjectInfo, CONFIG
 from raiders.gameobjects._gameobject_utils import (
     darken, 
     polygon, 
@@ -16,6 +16,9 @@ from raiders.gameobjects.object import Object
 
 class Turret(Object):
     display_layer = DisplayLayers.PLAYER_BOTTOM_ELEMENT
+    minimap_info = MinimapInfo(color=None, r=4)
+
+    incr = math.radians(10)
 
     sprite_cache = {}
 
@@ -32,9 +35,9 @@ class Turret(Object):
     brown = (120, 80, 60)
     lightbrown = (210, 170, 130)
 
-    def __init__(self, env, pos, angle, team, player):
+    def __init__(self, env, pos, angle, player):
         super().__init__(env, pos, max_size=self.max_size, max_health=self.max_health)
-        self.team = team
+        self.team = player.team
         self.player = player
         self.angle = angle
 
@@ -76,6 +79,10 @@ class Turret(Object):
         else:
             self.attack_tick -= 1
     
+    def recieveHitObject(self, obj, damage):
+        if isinstance(obj, GAMEOBJECTS["Bullet"]):
+            self.health = max(0, self.health-damage)
+
     def recieveHitUpdate(self, obj, damage):
         super().recieveHitUpdate(obj, damage)
         self.env.addSound("structurehit", self.pos, 0.6)
@@ -93,6 +100,13 @@ class Turret(Object):
         self.env.addDynamicObject(obj)
         self.attack_tick = self.max_attack_tick
         self.env.addSound("turretfire", self.pos, 0.4)
+
+    @classmethod
+    def displayOnMinimap(cls, surface, info, scale):
+        if cls.minimap_info is not None:
+            color, r = CONFIG["team_colors"]["defenders" if info.team==1 else "raiders"] + [170,], cls.minimap_info.r
+            pos = np.multiply(info.position, scale)
+            pygame.draw.circle(surface, color, pos, r)
 
     @staticmethod
     def render(info):
@@ -143,10 +157,10 @@ class Turret(Object):
 
     def getInfo(self):
         return ObjectInfo(
-            type_ = self.__class__.__name__,
+            type = self.__class__.__name__,
             team = self.team,
             position = self.pos,
-            angle = self.angle,
+            angle = round(self.angle / self.incr) * self.incr,
             size = self.size,
             health = self.health,
             hit = self.hit,
@@ -280,8 +294,8 @@ class Scattershot(Turret):
             team_color = CONFIG["team_colors"]["defenders" if info.team==1 else "raiders"]
             s = info.size
 
-            pygame.draw.circle(surface, darken(Turret.brown, scale=0.85), center, info.size)
-            pygame.draw.circle(surface, Turret.brown, center, info.size-3)
+            pygame.draw.circle(surface, darken(Turret.lightbrown, scale=0.45), center, info.size)
+            pygame.draw.circle(surface, darken(Turret.lightbrown, scale=0.6), center, info.size-3)
 
             pygame.draw.polygon(surface, darken(Turret.grey), 
                                 [
